@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{ --gold:#d4a237; }
   *{box-sizing:border-box;}
@@ -122,7 +123,7 @@
   .search{margin-bottom:10px;}
   .subtabs{display:flex;gap:8px;margin-bottom:14px;}
   .subtab{
-    flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:12px;
+    flex:1;text-align:center;padding:9px 2px;border-radius:9px;font-size:11px;
     border:1px solid #3a2f1c;color:#a9967a;cursor:pointer;font-weight:600;
   }
   .subtab.active{background:linear-gradient(90deg,#d4a237,#e9c46a);color:#1a1206;border-color:transparent;}
@@ -246,6 +247,7 @@
     <div class="subtabs">
       <div class="subtab active" data-sub="sub-daily" onclick="showSub('sub-daily',this)">Aaj</div>
       <div class="subtab" data-sub="sub-monthly" onclick="showSub('sub-monthly',this)">Mahina</div>
+      <div class="subtab" data-sub="sub-custom" onclick="showSub('sub-custom',this)">Koi Din</div>
       <div class="subtab" data-sub="sub-dash" onclick="showSub('sub-dash',this)">Charts</div>
     </div>
 
@@ -271,6 +273,7 @@
         <div id="reportDetails"></div>
         <button class="secondary" onclick="shareWhatsapp('daily')">📲 WhatsApp Par Report Bhejo</button>
         <button class="secondary" onclick="copyReport('daily')">📋 Report Copy Karo</button>
+        <button class="secondary" onclick="exportExcel('daily')">📊 Excel Mein Download Karo</button>
       </div>
     </div>
 
@@ -293,6 +296,30 @@
         <div id="monthlyDetails"></div>
         <button class="secondary" onclick="shareWhatsapp('monthly')">📲 WhatsApp Par Report Bhejo</button>
         <button class="secondary" onclick="copyReport('monthly')">📋 Report Copy Karo</button>
+        <button class="secondary" onclick="exportExcel('monthly')">📊 Excel Mein Download Karo</button>
+      </div>
+    </div>
+
+    <!-- CUSTOM DATE -->
+    <div class="subview" id="sub-custom">
+      <div class="card">
+        <h2>📌 Kisi Bhi Din Ki Report</h2>
+        <label>Date Chunain</label>
+        <input type="date" id="customDatePicker">
+        <button class="primary" onclick="generateCustomDate()">Report Nikalo</button>
+      </div>
+      <div class="card" id="customCard" style="display:none;">
+        <h2 id="customTitle">📅 Report</h2>
+        <div class="stat-grid">
+          <div class="stat"><div class="n" id="cBuyCount">0</div><div class="l">Phones Kharide</div></div>
+          <div class="stat"><div class="n" id="cSellCount">0</div><div class="l">Phones Beche</div></div>
+          <div class="stat"><div class="n" id="cProfit">0</div><div class="l">Us Din Ka Profit (Rs)</div></div>
+          <div class="stat"><div class="n" id="cStock">0</div><div class="l">Total Stock Baaki</div></div>
+        </div>
+        <div id="customDetails"></div>
+        <button class="secondary" onclick="shareWhatsapp('custom')">📲 WhatsApp Par Report Bhejo</button>
+        <button class="secondary" onclick="copyReport('custom')">📋 Report Copy Karo</button>
+        <button class="secondary" onclick="exportExcel('custom')">📊 Excel Mein Download Karo</button>
       </div>
     </div>
 
@@ -309,6 +336,11 @@
       <div class="card">
         <h2>🥧 Is Mahine Ka Cash Breakdown</h2>
         <div class="chart-wrap"><canvas id="chartBreak" height="220"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>📊 Master Excel Report (Sab Dates)</h2>
+        <p style="font-size:12px;color:#a9967a;margin:0 0 8px;">Ek hi file mein: Master Summary sheet, Charts wali sheet, aur har din ki apni alag sheet.</p>
+        <button class="secondary" onclick="exportMasterExcel()">📊 Master Excel Download Karo</button>
       </div>
       <div class="card">
         <h2>💾 Data Ka Backup</h2>
@@ -334,7 +366,8 @@
 let phones = [];
 let expenses = [];
 let payments = []; // {id, phoneId, type:'sell_due'|'buy_due', amount, date, name}
-let lastReportText = { daily:"", monthly:"" };
+let lastReportText = { daily:"", monthly:"", custom:"" };
+let lastReportData = { daily:null, monthly:null, custom:null };
 let chartMonthlyRef, chartTrendRef, chartBreakRef;
 
 function todayStr(){
@@ -722,8 +755,7 @@ function buildTextReport(title, boughtList, soldList, expList, stats, stockRemai
   return t;
 }
 
-function closeShop(){
-  const t = todayStr();
+function buildReportForDate(t){
   const boughtToday = phones.filter(p=>p.buyDate===t);
   const soldToday = phones.filter(p=>p.sellDate===t && p.status==='sold');
   const expToday = expenses.filter(e=>e.date===t);
@@ -731,15 +763,39 @@ function closeShop(){
   const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
   const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
   const stats = computeStats(boughtToday, soldToday, expToday, dueSettledSellAmt, dueSettledBuyAmt);
+  return { boughtToday, soldToday, expToday, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt, stats };
+}
+
+function closeShop(){
+  const t = todayStr();
+  const r = buildReportForDate(t);
 
   document.getElementById('reportCard').style.display='block';
   document.getElementById('reportDate').textContent = '📅 Report — ' + prettyDate();
-  document.getElementById('rBuyCount').textContent = boughtToday.length;
-  document.getElementById('rSellCount').textContent = soldToday.length;
-  document.getElementById('rProfit').textContent = stats.totalProfit.toLocaleString('en-IN');
-  document.getElementById('rStock').textContent = stockRemaining;
-  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(boughtToday, soldToday, expToday, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
-  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), boughtToday, soldToday, expToday, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+  document.getElementById('rBuyCount').textContent = r.boughtToday.length;
+  document.getElementById('rSellCount').textContent = r.soldToday.length;
+  document.getElementById('rProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
+  document.getElementById('rStock').textContent = r.stockRemaining;
+  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockRemaining, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
+}
+
+function generateCustomDate(){
+  const t = document.getElementById('customDatePicker').value;
+  if(!t){ alert('Pehle date chunein.'); return; }
+  const r = buildReportForDate(t);
+  const prettyD = new Date(t+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+
+  document.getElementById('customCard').style.display='block';
+  document.getElementById('customTitle').textContent = '📅 Report — ' + prettyD;
+  document.getElementById('cBuyCount').textContent = r.boughtToday.length;
+  document.getElementById('cSellCount').textContent = r.soldToday.length;
+  document.getElementById('cProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
+  document.getElementById('cStock').textContent = r.stockRemaining;
+  document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockRemaining, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
 }
 
 function generateMonthly(){
@@ -760,17 +816,20 @@ function generateMonthly(){
   document.getElementById('mStock').textContent = stockRemaining;
   document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
   lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+  lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
 }
 
 function shareWhatsapp(kind){
   if(kind==='daily' && !lastReportText.daily) closeShop();
   if(kind==='monthly' && !lastReportText.monthly) generateMonthly();
+  if(kind==='custom' && !lastReportText.custom){ generateCustomDate(); if(!lastReportText.custom) return; }
   const url = 'https://wa.me/?text=' + encodeURIComponent(lastReportText[kind]);
   window.open(url, '_blank');
 }
 function copyReport(kind){
   if(kind==='daily' && !lastReportText.daily) closeShop();
   if(kind==='monthly' && !lastReportText.monthly) generateMonthly();
+  if(kind==='custom' && !lastReportText.custom){ generateCustomDate(); if(!lastReportText.custom) return; }
   navigator.clipboard.writeText(lastReportText[kind]).then(()=>{
     alert('Report copy ho gayi — ab kahin bhi paste kar sakte hain.');
   }).catch(()=>{ alert('Copy nahi ho saka, report manually copy karein.'); });
@@ -841,6 +900,128 @@ function renderDashboard(){
     data:{ labels:['Buy','Sale','Kharcha'], datasets:[{ data:[totalBuyM, totalSaleM, totalExpM], backgroundColor:['#8a7a5e', goldDark, red] }] },
     options:{ responsive:true, plugins:{legend:{position:'bottom', labels:{color:'#f2ead9', font:{size:11}}}} }
   });
+}
+
+function buildMonthlyChartRows(){
+  const months = getLast6Months();
+  const rows = [['Month','Total Buy (Rs)','Total Sale (Rs)','Total Profit (Rs)']];
+  months.forEach(m=>{
+    const b = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
+    const s = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
+    rows.push([prettyMonth(m), b.reduce((a,p)=>a+p.buyPrice,0), s.reduce((a,p)=>a+p.sellPrice,0), s.reduce((a,p)=>a+(p.sellPrice-p.buyPrice),0)]);
+  });
+  return rows;
+}
+function buildDailyTrendRows(){
+  const m = thisMonthStr();
+  const daysInMonth = new Date(parseInt(m.split('-')[0]), parseInt(m.split('-')[1]), 0).getDate();
+  const rows = [['Date','Profit (Rs)']];
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = m+'-'+String(d).padStart(2,'0');
+    const soldOnDay = phones.filter(p=>p.sellDate===ds && p.status==='sold');
+    rows.push([ds, soldOnDay.reduce((a,p)=>a+(p.sellPrice-p.buyPrice),0)]);
+  }
+  return rows;
+}
+
+function exportMasterExcel(){
+  const wb = XLSX.utils.book_new();
+  const out = computeOutstandingTotals();
+  const allSold = phones.filter(p=>p.status==='sold');
+  const totalBuyAll = phones.reduce((s,p)=>s+p.buyPrice,0);
+  const totalSaleAll = allSold.reduce((s,p)=>s+p.sellPrice,0);
+  const totalProfitAll = allSold.reduce((s,p)=>s+(p.sellPrice-p.buyPrice),0);
+  const totalExpAll = expenses.reduce((s,e)=>s+e.amount,0);
+  const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
+
+  const summaryRows = [
+    { 'Metric':'Report Generated On', 'Value': prettyDate() },
+    { 'Metric':'Total Phones Ever Bought', 'Value': phones.length },
+    { 'Metric':'Total Phones Sold', 'Value': allSold.length },
+    { 'Metric':'Stock Remaining', 'Value': stockRemaining },
+    { 'Metric':'Total Buy (All Time) Rs', 'Value': totalBuyAll },
+    { 'Metric':'Total Sale (All Time) Rs', 'Value': totalSaleAll },
+    { 'Metric':'Total Profit (All Time) Rs', 'Value': totalProfitAll },
+    { 'Metric':'Total Expenses (All Time) Rs', 'Value': totalExpAll },
+    { 'Metric':'Outstanding - Customers Owe Us Rs', 'Value': out.totalCustomerDue },
+    { 'Metric':'Outstanding - We Owe Sellers Rs', 'Value': out.totalSellerDue }
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'Master Summary');
+
+  const chartsAOA = [
+    ...buildMonthlyChartRows(),
+    [],
+    ['Daily Profit Trend - '+prettyMonth(thisMonthStr())],
+    ...buildDailyTrendRows()
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chartsAOA), 'Charts Data');
+
+  const dateSet = new Set();
+  phones.forEach(p=>{ if(p.buyDate) dateSet.add(p.buyDate); if(p.sellDate) dateSet.add(p.sellDate); });
+  expenses.forEach(e=>{ if(e.date) dateSet.add(e.date); });
+  const dates = Array.from(dateSet).sort().reverse();
+
+  dates.forEach(d=>{
+    const rows = [];
+    phones.filter(p=>p.buyDate===d).forEach(p=>{
+      rows.push({ 'Type':'Buy', 'Model':p.model, 'Color':p.color||'', 'IMEI':p.imei||'', 'Amount (Rs)':p.buyPrice, 'Paid (Rs)':p.buyPaid, 'Due (Rs)':p.buyDue, 'Status':statusOf(p.buyDue), 'Party':p.sellerName||'', 'Profit (Rs)':'' });
+    });
+    phones.filter(p=>p.sellDate===d && p.status==='sold').forEach(p=>{
+      rows.push({ 'Type':'Sell', 'Model':p.model, 'Color':p.color||'', 'IMEI':p.imei||'', 'Amount (Rs)':p.sellPrice, 'Paid (Rs)':p.sellPaid, 'Due (Rs)':p.sellDue, 'Status':statusOf(p.sellDue), 'Party':p.customerName||'', 'Profit (Rs)':p.sellPrice-p.buyPrice });
+    });
+    expenses.filter(e=>e.date===d).forEach(e=>{
+      rows.push({ 'Type':'Expense', 'Model':e.desc, 'Color':'', 'IMEI':'', 'Amount (Rs)':e.amount, 'Paid (Rs)':'', 'Due (Rs)':'', 'Status':'', 'Party':'', 'Profit (Rs)':'' });
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), d);
+  });
+
+  XLSX.writeFile(wb, 'Golden-Mobile-Zone-Master-Report.xlsx');
+}
+
+function statusOf(due){ return due>0 ? '⏳ Pending' : '✅ Cleared'; }
+
+function exportExcel(kind){
+  if(kind==='daily' && !lastReportData.daily) closeShop();
+  if(kind==='monthly' && !lastReportData.monthly) generateMonthly();
+  if(kind==='custom' && !lastReportData.custom){ generateCustomDate(); if(!lastReportData.custom) return; }
+  const data = lastReportData[kind];
+  if(!data) return;
+  const out = computeOutstandingTotals();
+
+  const buySheet = data.boughtList.map(p=>({
+    'Model': p.model, 'Color': p.color||'', 'IMEI': p.imei||'', 'Buy Date': p.buyDate,
+    'Total Price (Rs)': p.buyPrice, 'Paid (Rs)': p.buyPaid, 'Due To Seller (Rs)': p.buyDue,
+    'Status': statusOf(p.buyDue), 'Seller Name': p.sellerName||''
+  }));
+  const sellSheet = data.soldList.map(p=>({
+    'Model': p.model, 'Color': p.color||'', 'IMEI': p.imei||'', 'Sell Date': p.sellDate,
+    'Total Price (Rs)': p.sellPrice, 'Paid By Customer (Rs)': p.sellPaid, 'Due From Customer (Rs)': p.sellDue,
+    'Status': statusOf(p.sellDue), 'Buy Price (Rs)': p.buyPrice, 'Profit (Rs)': p.sellPrice - p.buyPrice, 'Customer Name': p.customerName||''
+  }));
+  const expSheet = data.expList.map(e=>({ 'Description': e.desc, 'Amount (Rs)': e.amount, 'Date': e.date }));
+  const summarySheet = [
+    { 'Metric': 'Phones Bought', 'Value': data.boughtList.length },
+    { 'Metric': 'Phones Sold', 'Value': data.soldList.length },
+    { 'Metric': 'Total Buy (Rs)', 'Value': data.stats.totalBuy },
+    { 'Metric': 'Total Sale (Rs)', 'Value': data.stats.totalSale },
+    { 'Metric': 'Total Profit (Rs)', 'Value': data.stats.totalProfit },
+    { 'Metric': 'Total Expenses (Rs)', 'Value': data.stats.totalExp },
+    { 'Metric': 'New Udhaar - Customers Owe (Rs)', 'Value': data.stats.dueCreatedSell },
+    { 'Metric': 'Udhaar Collected (Rs)', 'Value': data.dueSettledSellAmt },
+    { 'Metric': 'New Udhaar - We Owe Sellers (Rs)', 'Value': data.stats.dueCreatedBuy },
+    { 'Metric': 'Udhaar Paid To Sellers (Rs)', 'Value': data.dueSettledBuyAmt },
+    { 'Metric': 'Total Outstanding - Customers Owe Us (Rs)', 'Value': out.totalCustomerDue },
+    { 'Metric': 'Total Outstanding - We Owe Sellers (Rs)', 'Value': out.totalSellerDue },
+    { 'Metric': 'Stock Remaining (Phones)', 'Value': data.stockRemaining },
+    { 'Metric': 'Actual Net Cash (Rs)', 'Value': data.stats.netCash },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summarySheet), 'Summary');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buySheet.length?buySheet:[{'Model':'-- No purchases --'}]), 'Buy');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sellSheet.length?sellSheet:[{'Model':'-- No sales --'}]), 'Sell');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expSheet.length?expSheet:[{'Description':'-- No expenses --'}]), 'Expenses');
+  XLSX.writeFile(wb, data.filename + '.xlsx');
 }
 
 function exportBackup(){
