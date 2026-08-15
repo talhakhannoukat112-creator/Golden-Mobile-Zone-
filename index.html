@@ -134,6 +134,16 @@
   .due-top{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:6px;}
   .due-inline{display:flex;gap:6px;}
   .due-inline input{flex:1;padding:8px 10px;font-size:13px;}
+  .suggest-box{
+    position:absolute;top:calc(100% + 4px);left:0;right:0;
+    background:#161209;border:1px solid #3a2f1c;border-radius:9px;
+    max-height:200px;overflow-y:auto;z-index:30;display:none;
+    box-shadow:0 6px 16px rgba(0,0,0,0.5);
+  }
+  .suggest-item{padding:10px 12px;font-size:13px;color:#f2ead9;border-bottom:1px solid #2a2417;cursor:pointer;}
+  .suggest-item:last-child{border-bottom:none;}
+  .suggest-item:active{background:#241d12;}
+  .suggest-item .sub{color:#8a7a5e;font-size:11px;margin-top:2px;}
 </style>
 </head>
 <body>
@@ -153,6 +163,8 @@
       <input id="buyModel" placeholder="e.g. Samsung A14">
       <label>IMEI Number</label>
       <input id="buyImei" placeholder="e.g. 356789xxxxxxxxx">
+      <label>Color</label>
+      <input id="buyColor" placeholder="e.g. Black, Blue, Gold">
       <label>Total Price (Rs)</label>
       <input id="buyPrice" type="number" inputmode="numeric" placeholder="e.g. 25000">
       <label>Abhi Kitna Diya (Rs)</label>
@@ -169,11 +181,15 @@
   <div class="section" id="sec-sell">
     <div class="card">
       <h2>📤 Phone Sell Kiya</h2>
-      <label>Stock Se Phone Chunain (type bhi kar sakte ho)</label>
-      <input list="phoneOptions" id="sellSearch" placeholder="Model ya IMEI likhna shuru karein..." oninput="updateSellImei()" autocomplete="off">
-      <datalist id="phoneOptions"></datalist>
+      <label>Stock Se Phone Chunain (tap karke list dekhein ya type karein)</label>
+      <div style="position:relative;">
+        <input id="sellSearch" placeholder="Model, IMEI ya Color likhein..." oninput="onSellSearchInput()" onfocus="renderSellSuggestions()" autocomplete="off">
+        <div id="sellSuggestions" class="suggest-box"></div>
+      </div>
       <label>IMEI Number</label>
       <input id="sellImei" placeholder="Phone chunte hi yahan aa jayega" readonly>
+      <label>Color</label>
+      <input id="sellColor" placeholder="Phone chunte hi yahan aa jayega" readonly>
       <label>Total Sell Price (Rs)</label>
       <input id="sellPrice" type="number" inputmode="numeric" placeholder="e.g. 29000">
       <label>Abhi Kitna Liya (Rs)</label>
@@ -390,6 +406,7 @@ function showSub(id, el){
 function addBuy(){
   const model = document.getElementById('buyModel').value.trim();
   const imei = document.getElementById('buyImei').value.trim();
+  const color = document.getElementById('buyColor').value.trim();
   const total = parseFloat(document.getElementById('buyPrice').value);
   const paidRaw = document.getElementById('buyPaid').value;
   const seller = document.getElementById('buySeller').value.trim();
@@ -400,12 +417,13 @@ function addBuy(){
   paid = Math.max(0, Math.min(paid, total));
   const due = total - paid;
   phones.push({
-    id:uid(), model, imei, buyPrice:total, buyPaid:paid, buyDue:due, sellerName: due>0 ? seller : (seller||''),
+    id:uid(), model, imei, color, buyPrice:total, buyPaid:paid, buyDue:due, sellerName: due>0 ? seller : (seller||''),
     buyDate:todayStr(), status:'in_stock', sellPrice:null, sellPaid:0, sellDue:0, sellDate:null, customerName:''
   });
   saveData();
   document.getElementById('buyModel').value='';
   document.getElementById('buyImei').value='';
+  document.getElementById('buyColor').value='';
   document.getElementById('buyPrice').value='';
   document.getElementById('buyPaid').value='';
   document.getElementById('buySeller').value='';
@@ -413,38 +431,69 @@ function addBuy(){
   renderInventory(); renderSellOptions(); renderUdhaar(); renderTodayEntries();
 }
 
-function phoneLabel(p){ return p.model + (p.imei ? ' — '+p.imei : ''); }
+function phoneLabel(p){ return p.model + (p.color? ' ('+p.color+')' : '') + (p.imei ? ' — '+p.imei : ''); }
 
 function renderSellOptions(){
-  const dl = document.getElementById('phoneOptions');
+  document.getElementById('sellSearch').value='';
+  document.getElementById('sellSearch').dataset.selectedId='';
+  document.getElementById('sellImei').value='';
+  document.getElementById('sellColor').value='';
   const stock = phones.filter(p=>p.status==='in_stock');
-  if(stock.length===0){
-    dl.innerHTML = '';
-    document.getElementById('sellSearch').placeholder = '-- Stock khali hai --';
-    document.getElementById('sellImei').value='';
-    return;
-  }
-  dl.innerHTML = stock.map(p=>`<option value="${phoneLabel(p)}">`).join('');
-  updateSellImei();
+  document.getElementById('sellSearch').placeholder = stock.length===0 ? '-- Stock khali hai --' : 'Model, IMEI ya Color likhein...';
+  document.getElementById('sellSuggestions').style.display='none';
 }
+
+function onSellSearchInput(){
+  document.getElementById('sellSearch').dataset.selectedId='';
+  document.getElementById('sellImei').value='';
+  document.getElementById('sellColor').value='';
+  renderSellSuggestions();
+}
+
+function renderSellSuggestions(){
+  const box = document.getElementById('sellSuggestions');
+  const q = document.getElementById('sellSearch').value.trim().toLowerCase();
+  const stock = phones.filter(p=>p.status==='in_stock');
+  let filtered = stock;
+  if(q) filtered = stock.filter(p=> phoneLabel(p).toLowerCase().includes(q));
+  if(filtered.length===0){ box.style.display='none'; box.innerHTML=''; return; }
+  box.innerHTML = filtered.map(p=>`
+    <div class="suggest-item" onclick="selectSellPhone('${p.id}')">
+      <div>${p.model}${p.color?' ('+p.color+')':''}</div>
+      <div class="sub">${p.imei ? 'IMEI: '+p.imei : 'IMEI darj nahi'} • Buy: ${money(p.buyPrice)}</div>
+    </div>`).join('');
+  box.style.display='block';
+}
+
+function selectSellPhone(id){
+  const ph = phones.find(p=>p.id===id && p.status==='in_stock');
+  if(!ph) return;
+  document.getElementById('sellSearch').value = phoneLabel(ph);
+  document.getElementById('sellSearch').dataset.selectedId = id;
+  document.getElementById('sellImei').value = ph.imei || 'IMEI darj nahi tha';
+  document.getElementById('sellColor').value = ph.color || 'Color darj nahi';
+  document.getElementById('sellSuggestions').style.display='none';
+}
+
+document.addEventListener('click', (e)=>{
+  const box = document.getElementById('sellSuggestions');
+  const input = document.getElementById('sellSearch');
+  if(box && input && !box.contains(e.target) && e.target!==input){ box.style.display='none'; }
+});
 
 function findStockPhoneByLabel(label){
   return phones.find(p=>p.status==='in_stock' && phoneLabel(p)===label);
 }
 
-function updateSellImei(){
-  const val = document.getElementById('sellSearch').value.trim();
-  const ph = findStockPhoneByLabel(val);
-  document.getElementById('sellImei').value = ph ? (ph.imei || 'IMEI darj nahi tha') : '';
-}
-
 function addSell(){
-  const label = document.getElementById('sellSearch').value.trim();
+  const inputEl = document.getElementById('sellSearch');
   const total = parseFloat(document.getElementById('sellPrice').value);
   const paidRaw = document.getElementById('sellPaid').value;
   const customer = document.getElementById('sellCustomer').value.trim();
   const msg = document.getElementById('sellMsg');
-  const ph = findStockPhoneByLabel(label);
+  let ph = null;
+  if(inputEl.dataset.selectedId){ ph = phones.find(p=>p.id===inputEl.dataset.selectedId && p.status==='in_stock'); }
+  if(!ph) ph = findStockPhoneByLabel(inputEl.value.trim());
   if(!ph){ msg.className='msg err'; msg.textContent='Stock mein se sahi phone chunein (suggestion list se tap karein).'; return; }
   if(!total){ msg.className='msg err'; msg.textContent='Sell price likhein.'; return; }
   let paid = paidRaw==='' ? total : parseFloat(paidRaw);
@@ -454,7 +503,9 @@ function addSell(){
   ph.status='sold'; ph.sellPrice=total; ph.sellPaid=paid; ph.sellDue=due; ph.sellDate=todayStr(); ph.customerName = due>0 ? customer : (customer||'');
   saveData();
   document.getElementById('sellSearch').value='';
+  document.getElementById('sellSearch').dataset.selectedId='';
   document.getElementById('sellImei').value='';
+  document.getElementById('sellColor').value='';
   document.getElementById('sellPrice').value='';
   document.getElementById('sellPaid').value='';
   document.getElementById('sellCustomer').value='';
@@ -470,7 +521,7 @@ function renderInventory(){
   if(stock.length===0){ list.innerHTML='<div class="empty">Koi phone stock mein nahi.</div>'; return; }
   list.innerHTML = stock.map(p=>`
     <div class="row">
-      <div><div class="m">${p.model}</div><div class="sub">${p.imei ? 'IMEI: '+p.imei+' • ' : ''}${p.buyDate}${p.buyDue>0?' • Seller ko baaqi: '+money(p.buyDue):''}</div></div>
+      <div><div class="m">${p.model}${p.color?' ('+p.color+')':''}</div><div class="sub">${p.imei ? 'IMEI: '+p.imei+' • ' : ''}${p.buyDate}${p.buyDue>0?' • Seller ko baaqi: '+money(p.buyDue):''}</div></div>
       <div class="p">${money(p.buyPrice)}</div>
       <button class="del" onclick="deletePhone('${p.id}')">🗑</button>
     </div>`).join('');
