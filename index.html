@@ -85,6 +85,10 @@
     padding:7px 10px;border-radius:8px;border:1px solid #d4a237;background:transparent;
     color:#e9c46a;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;
   }
+  button.del{
+    padding:6px 9px;border-radius:8px;border:1px solid #7a3a3a;background:transparent;
+    color:#e08585;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;flex:0 0 auto;
+  }
   .msg{font-size:12px;margin-top:8px;min-height:14px;}
   .msg.ok{color:#8fd19e;}
   .msg.err{color:#e08585;}
@@ -231,6 +235,10 @@
     <!-- DAILY -->
     <div class="subview active" id="sub-daily">
       <div class="card">
+        <h2>🗑 Aaj Ki Entries (Delete Karne Ke Liye)</h2>
+        <div id="todayEntriesList"><div class="empty">Loading...</div></div>
+      </div>
+      <div class="card">
         <h2>🔒 Shop Band Karna Hai?</h2>
         <p style="font-size:13px;color:#c9bda3;margin:0 0 4px;">Yeh button dabate hi aaj ka pura hisaab tayar ho jayega.</p>
         <button class="primary" onclick="closeShop()">🔴 Shop OFF — Aaj Ka Hisaab Nikalo</button>
@@ -351,7 +359,7 @@ async function loadData(){
   try{ const e = await storageGet('expenses'); expenses = e ? JSON.parse(e) : []; }catch(e){ expenses = []; }
   try{ const pay = await storageGet('payments'); payments = pay ? JSON.parse(pay) : []; }catch(e){ payments = []; }
   document.getElementById('monthPicker').value = thisMonthStr();
-  renderInventory(); renderSellOptions(); renderTodayExpenses(); renderUdhaar();
+  renderInventory(); renderSellOptions(); renderTodayExpenses(); renderUdhaar(); renderTodayEntries();
 }
 async function saveData(){
   await storageSet('phones', JSON.stringify(phones));
@@ -367,6 +375,7 @@ function showTab(id, el){
   if(id==='sec-sell') renderSellOptions();
   if(id==='sec-inv') renderInventory();
   if(id==='sec-exp') renderTodayExpenses();
+  if(id==='sec-report') renderTodayEntries();
   if(id==='sec-udhaar') renderUdhaar();
 }
 function showSub(id, el){
@@ -400,7 +409,7 @@ function addBuy(){
   document.getElementById('buyPaid').value='';
   document.getElementById('buySeller').value='';
   msg.className='msg ok'; msg.textContent = due>0 ? '✅ Phone add ho gaya — seller ko '+money(due)+' baaqi hain.' : '✅ Phone stock mein add ho gaya.';
-  renderInventory(); renderSellOptions(); renderUdhaar();
+  renderInventory(); renderSellOptions(); renderUdhaar(); renderTodayEntries();
 }
 
 function renderSellOptions(){
@@ -434,13 +443,4 @@ function addSell(){
   saveData();
   document.getElementById('sellPrice').value='';
   document.getElementById('sellPaid').value='';
-  document.getElementById('sellCustomer').value='';
-  msg.className='msg ok'; msg.textContent = due>0 ? '✅ Sale record ho gayi — customer se '+money(due)+' lena baaqi hai.' : '✅ Sale record ho gayi.';
-  renderSellOptions(); renderInventory(); renderUdhaar();
-}
-
-function renderInventory(){
-  const list = document.getElementById('invList');
-  const q = (document.getElementById('invSearch')?.value || '').toLowerCase();
-  let stock = phones.filter(p=>p.status==='in_stock');
-  if(q) stock = stoc
+  document.getElementById('se
