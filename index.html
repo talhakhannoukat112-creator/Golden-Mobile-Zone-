@@ -448,4 +448,366 @@ function addSell(){
   if(!ph){ msg.className='msg err'; msg.textContent='Stock mein se sahi phone chunein (suggestion list se tap karein).'; return; }
   if(!total){ msg.className='msg err'; msg.textContent='Sell price likhein.'; return; }
   let paid = paidRaw==='' ? total : parseFloat(paidRaw);
-  if(isNaN(paid)) paid 
+  if(isNaN(paid)) paid = total;
+  paid = Math.max(0, Math.min(paid, total));
+  const due = total - paid;
+  ph.status='sold'; ph.sellPrice=total; ph.sellPaid=paid; ph.sellDue=due; ph.sellDate=todayStr(); ph.customerName = due>0 ? customer : (customer||'');
+  saveData();
+  document.getElementById('sellSearch').value='';
+  document.getElementById('sellImei').value='';
+  document.getElementById('sellPrice').value='';
+  document.getElementById('sellPaid').value='';
+  document.getElementById('sellCustomer').value='';
+  msg.className='msg ok'; msg.textContent = due>0 ? '✅ Sale record ho gayi — customer se '+money(due)+' lena baaqi hai.' : '✅ Sale record ho gayi.';
+  renderSellOptions(); renderInventory(); renderUdhaar(); renderTodayEntries();
+}
+
+function renderInventory(){
+  const list = document.getElementById('invList');
+  const q = (document.getElementById('invSearch')?.value || '').toLowerCase();
+  let stock = phones.filter(p=>p.status==='in_stock');
+  if(q) stock = stock.filter(p=> p.model.toLowerCase().includes(q) || (p.imei||'').toLowerCase().includes(q));
+  if(stock.length===0){ list.innerHTML='<div class="empty">Koi phone stock mein nahi.</div>'; return; }
+  list.innerHTML = stock.map(p=>`
+    <div class="row">
+      <div><div class="m">${p.model}</div><div class="sub">${p.imei ? 'IMEI: '+p.imei+' • ' : ''}${p.buyDate}${p.buyDue>0?' • Seller ko baaqi: '+money(p.buyDue):''}</div></div>
+      <div class="p">${money(p.buyPrice)}</div>
+      <button class="del" onclick="deletePhone('${p.id}')">🗑</button>
+    </div>`).join('');
+}
+
+function addExpense(){
+  const desc = document.getElementById('expDesc').value.trim();
+  const amt = parseFloat(document.getElementById('expAmt').value);
+  const msg = document.getElementById('expMsg');
+  if(!desc || !amt){ msg.className='msg err'; msg.textContent='Detail aur amount likhein.'; return; }
+  expenses.push({id:uid(), desc, amount:amt, date:todayStr()});
+  saveData();
+  document.getElementById('expDesc').value='';
+  document.getElementById('expAmt').value='';
+  msg.className='msg ok'; msg.textContent='✅ Kharcha add ho gaya.';
+  renderTodayExpenses();
+  renderTodayEntries();
+}
+
+function renderTodayExpenses(){
+  const list = document.getElementById('todayExpList');
+  const t = todayStr();
+  const todays = expenses.filter(e=>e.date===t);
+  if(todays.length===0){ list.innerHTML='<div class="empty">Aaj koi kharcha nahi likha gaya.</div>'; return; }
+  list.innerHTML = todays.map(e=>`<div class="row"><div class="m">${e.desc}</div><div class="p">${money(e.amount)}</div><button class="del" onclick="deleteExpense('${e.id}')">🗑</button></div>`).join('')
+    + `<div class="row"><div class="m">Total</div><div class="p">${money(todays.reduce((s,e)=>s+e.amount,0))}</div></div>`;
+}
+
+// ---------- UDHAAR ----------
+function renderUdhaar(){
+  const custBox = document.getElementById('custDueList');
+  const sellerBox = document.getElementById('sellerDueList');
+  const custDues = phones.filter(p=>p.status==='sold' && p.sellDue>0);
+  const sellerDues = phones.filter(p=>p.buyDue>0);
+
+  if(custDues.length===0){ custBox.innerHTML='<div class="empty">Kisi customer ka udhaar baaqi nahi.</div>'; }
+  else{
+    custBox.innerHTML = custDues.map(p=>`
+      <div class="due-row">
+        <div class="due-top">
+          <div><div class="m">${p.customerName || 'Naam likha nahi'}</div><div class="sub">${p.model} • Baaqi: <b style="color:#e9c46a">${money(p.sellDue)}</b></div></div>
+        </div>
+        <div class="due-inline">
+          <input type="number" id="custPay_${p.id}" placeholder="Kitna mila (Rs)">
+          <button class="mini" onclick="settleDue('${p.id}','sell')">Wasool Karo</button>
+        </div>
+      </div>`).join('');
+  }
+
+  if(sellerDues.length===0){ sellerBox.innerHTML='<div class="empty">Kisi seller ko udhaar dena baaqi nahi.</div>'; }
+  else{
+    sellerBox.innerHTML = sellerDues.map(p=>`
+      <div class="due-row">
+        <div class="due-top">
+          <div><div class="m">${p.sellerName || 'Naam likha nahi'}</div><div class="sub">${p.model} • Baaqi: <b style="color:#e9c46a">${money(p.buyDue)}</b></div></div>
+        </div>
+        <div class="due-inline">
+          <input type="number" id="sellerPay_${p.id}" placeholder="Kitna diya (Rs)">
+          <button class="mini" onclick="settleDue('${p.id}','buy')">Ada Karo</button>
+        </div>
+      </div>`).join('');
+  }
+}
+
+function settleDue(phoneId, kind){
+  const ph = phones.find(p=>p.id===phoneId);
+  if(!ph) return;
+  const inputId = kind==='sell' ? 'custPay_'+phoneId : 'sellerPay_'+phoneId;
+  const input = document.getElementById(inputId);
+  let amt = parseFloat(input.value);
+  if(!amt || amt<=0){ alert('Sahi amount likhein.'); return; }
+  const currentDue = kind==='sell' ? ph.sellDue : ph.buyDue;
+  if(amt > currentDue) amt = currentDue;
+  if(kind==='sell'){ ph.sellPaid += amt; ph.sellDue -= amt; }
+  else{ ph.buyPaid += amt; ph.buyDue -= amt; }
+  payments.push({id:uid(), phoneId, type: kind==='sell'?'sell_due':'buy_due', amount:amt, date:todayStr()});
+  saveData();
+  renderUdhaar(); renderInventory();
+}
+
+// ---------- DELETE / TODAY'S ENTRIES ----------
+function deletePhone(id){
+  if(!confirm('Ye entry pakka delete karni hai? Ye wapis nahi aayegi.')) return;
+  phones = phones.filter(p=>p.id!==id);
+  payments = payments.filter(pm=>pm.phoneId!==id);
+  saveData();
+  renderInventory(); renderSellOptions(); renderUdhaar(); renderTodayEntries();
+}
+function deleteExpense(id){
+  if(!confirm('Ye kharcha pakka delete karna hai?')) return;
+  expenses = expenses.filter(e=>e.id!==id);
+  saveData();
+  renderTodayExpenses(); renderTodayEntries();
+}
+function renderTodayEntries(){
+  const box = document.getElementById('todayEntriesList');
+  if(!box) return;
+  const t = todayStr();
+  const bought = phones.filter(p=>p.buyDate===t);
+  const sold = phones.filter(p=>p.sellDate===t && p.status==='sold');
+  const exp = expenses.filter(e=>e.date===t);
+  if(bought.length===0 && sold.length===0 && exp.length===0){
+    box.innerHTML = '<div class="empty">Aaj abhi tak koi entry nahi hui.</div>'; return;
+  }
+  let html = '';
+  bought.forEach(p=>{
+    html += `<div class="row"><div><div class="m">📥 ${p.model}</div><div class="sub">Buy — ${money(p.buyPrice)}</div></div><button class="del" onclick="deletePhone('${p.id}')">🗑</button></div>`;
+  });
+  sold.forEach(p=>{
+    html += `<div class="row"><div><div class="m">📤 ${p.model}</div><div class="sub">Sale — ${money(p.sellPrice)}</div></div><button class="del" onclick="deletePhone('${p.id}')">🗑</button></div>`;
+  });
+  exp.forEach(e=>{
+    html += `<div class="row"><div><div class="m">💸 ${e.desc}</div><div class="sub">Kharcha</div></div><div class="p" style="margin-right:6px;">${money(e.amount)}</div><button class="del" onclick="deleteExpense('${e.id}')">🗑</button></div>`;
+  });
+  box.innerHTML = html;
+}
+
+// ---------- REPORTS ----------
+function computeStats(boughtList, soldList, expList, dueSettledSellAmt, dueSettledBuyAmt){
+  const totalBuy = boughtList.reduce((s,p)=>s+p.buyPrice,0);
+  const totalSale = soldList.reduce((s,p)=>s+p.sellPrice,0);
+  const totalProfit = soldList.reduce((s,p)=>s+(p.sellPrice-p.buyPrice),0);
+  const totalExp = expList.reduce((s,e)=>s+e.amount,0);
+  const cashIn = soldList.reduce((s,p)=>s+p.sellPaid,0) + dueSettledSellAmt;
+  const cashOut = boughtList.reduce((s,p)=>s+p.buyPaid,0) + dueSettledBuyAmt + totalExp;
+  const netCash = cashIn - cashOut;
+  const dueCreatedSell = soldList.reduce((s,p)=>s+p.sellDue,0);
+  const dueCreatedBuy = boughtList.reduce((s,p)=>s+p.buyDue,0);
+  return {totalBuy, totalSale, totalProfit, totalExp, netCash, cashIn, cashOut, dueCreatedSell, dueCreatedBuy};
+}
+function computeOutstandingTotals(){
+  const totalCustomerDue = phones.filter(p=>p.status==='sold' && p.sellDue>0).reduce((s,p)=>s+p.sellDue,0);
+  const totalSellerDue = phones.filter(p=>p.buyDue>0).reduce((s,p)=>s+p.buyDue,0);
+  return {totalCustomerDue, totalSellerDue};
+}
+
+function buildDetailsHTML(boughtList, soldList, expList, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt){
+  const out = computeOutstandingTotals();
+  let d = '';
+  d += `<div class="rep-title">📥 Kharide Gaye Phones (${boughtList.length})</div>`;
+  if(boughtList.length===0) d += `<div class="rep-line"><span>Koi phone nahi khareeda</span></div>`;
+  boughtList.forEach(p=>{ d += `<div class="rep-line"><span>${p.model}${p.buyDue>0?' (udhaar '+money(p.buyDue)+')':''}</span><span>${money(p.buyPrice)}</span></div>`; });
+  d += `<div class="rep-line"><span><b>Total Buy</b></span><span><b>${money(stats.totalBuy)}</b></span></div>`;
+
+  d += `<div class="rep-title">📤 Beche Gaye Phones (${soldList.length})</div>`;
+  if(soldList.length===0) d += `<div class="rep-line"><span>Koi phone nahi becha</span></div>`;
+  soldList.forEach(p=>{ d += `<div class="rep-line"><span>${p.model}${p.sellDue>0?' (udhaar '+money(p.sellDue)+')':''}</span><span>${money(p.sellPrice)} (profit ${money(p.sellPrice-p.buyPrice)})</span></div>`; });
+  d += `<div class="rep-line"><span><b>Total Sale</b></span><span><b>${money(stats.totalSale)}</b></span></div>`;
+
+  d += `<div class="rep-title">💸 Kharche (${expList.length})</div>`;
+  if(expList.length===0) d += `<div class="rep-line"><span>Koi kharcha nahi</span></div>`;
+  expList.forEach(e=>{ d += `<div class="rep-line"><span>${e.desc}</span><span>${money(e.amount)}</span></div>`; });
+  d += `<div class="rep-line"><span><b>Total Kharcha</b></span><span><b>${money(stats.totalExp)}</b></span></div>`;
+
+  d += `<div class="rep-title">🧾 Udhaar Ka Hisaab</div>`;
+  d += `<div class="rep-line"><span>Naya Udhaar (customers se lena)</span><span>${money(stats.dueCreatedSell)}</span></div>`;
+  d += `<div class="rep-line"><span>Udhaar Wasool Kiya</span><span>${money(dueSettledSellAmt)}</span></div>`;
+  d += `<div class="rep-line"><span>Naya Udhaar (sellers ko dena)</span><span>${money(stats.dueCreatedBuy)}</span></div>`;
+  d += `<div class="rep-line"><span>Udhaar Ada Kiya</span><span>${money(dueSettledBuyAmt)}</span></div>`;
+  d += `<div class="rep-line"><span><b>Ab Total Baaqi (Customers Se Lena)</b></span><span><b>${money(out.totalCustomerDue)}</b></span></div>`;
+  d += `<div class="rep-line"><span><b>Ab Total Baaqi (Sellers Ko Dena)</b></span><span><b>${money(out.totalSellerDue)}</b></span></div>`;
+
+  d += `<div class="rep-title">📦 Stock & Cash Summary</div>`;
+  d += `<div class="rep-line"><span>Total Phones Stock Mein</span><span>${stockRemaining}</span></div>`;
+  d += `<div class="rep-line"><span><b>Actual Cash In/Out (Net)</b></span><span><b>${money(stats.netCash)}</b></span></div>`;
+  return d;
+}
+
+function buildTextReport(title, boughtList, soldList, expList, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt){
+  const out = computeOutstandingTotals();
+  let t = `*Golden Mobile Zone*\n📅 ${title}\n\n`;
+  t += `*📥 Phones Bought (${boughtList.length})*\n`;
+  if(boughtList.length===0) t += `— none —\n`;
+  boughtList.forEach(p=> t += `• ${p.model}${p.imei? ' ('+p.imei+')':''} — ${money(p.buyPrice)}${p.buyDue>0?' [udhaar '+money(p.buyDue)+']':''}\n`);
+  t += `Total Buy: ${money(stats.totalBuy)}\n\n`;
+
+  t += `*📤 Phones Sold (${soldList.length})*\n`;
+  if(soldList.length===0) t += `— none —\n`;
+  soldList.forEach(p=> t += `• ${p.model} — ${money(p.sellPrice)} (profit ${money(p.sellPrice-p.buyPrice)})${p.sellDue>0?' [udhaar '+money(p.sellDue)+']':''}\n`);
+  t += `Total Sale: ${money(stats.totalSale)}\n`;
+  t += `Total Profit: ${money(stats.totalProfit)}\n\n`;
+
+  t += `*💸 Expenses (${expList.length})*\n`;
+  if(expList.length===0) t += `— none —\n`;
+  expList.forEach(e=> t += `• ${e.desc} — ${money(e.amount)}\n`);
+  t += `Total Kharcha: ${money(stats.totalExp)}\n\n`;
+
+  t += `*🧾 Udhaar*\n`;
+  t += `Naya Udhaar (customers se lena): ${money(stats.dueCreatedSell)}\n`;
+  t += `Udhaar Wasool Kiya: ${money(dueSettledSellAmt)}\n`;
+  t += `Naya Udhaar (sellers ko dena): ${money(stats.dueCreatedBuy)}\n`;
+  t += `Udhaar Ada Kiya: ${money(dueSettledBuyAmt)}\n`;
+  t += `Ab Total Baaqi (Customers Se Lena): ${money(out.totalCustomerDue)}\n`;
+  t += `Ab Total Baaqi (Sellers Ko Dena): ${money(out.totalSellerDue)}\n\n`;
+
+  t += `*📦 Stock Remaining:* ${stockRemaining} phones\n`;
+  t += `*💰 Actual Net Cash:* ${money(stats.netCash)}\n`;
+  return t;
+}
+
+function closeShop(){
+  const t = todayStr();
+  const boughtToday = phones.filter(p=>p.buyDate===t);
+  const soldToday = phones.filter(p=>p.sellDate===t && p.status==='sold');
+  const expToday = expenses.filter(e=>e.date===t);
+  const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
+  const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
+  const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
+  const stats = computeStats(boughtToday, soldToday, expToday, dueSettledSellAmt, dueSettledBuyAmt);
+
+  document.getElementById('reportCard').style.display='block';
+  document.getElementById('reportDate').textContent = '📅 Report — ' + prettyDate();
+  document.getElementById('rBuyCount').textContent = boughtToday.length;
+  document.getElementById('rSellCount').textContent = soldToday.length;
+  document.getElementById('rProfit').textContent = stats.totalProfit.toLocaleString('en-IN');
+  document.getElementById('rStock').textContent = stockRemaining;
+  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(boughtToday, soldToday, expToday, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), boughtToday, soldToday, expToday, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+}
+
+function generateMonthly(){
+  const m = document.getElementById('monthPicker').value || thisMonthStr();
+  const boughtM = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
+  const soldM = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
+  const expM = expenses.filter(e=>e.date && e.date.startsWith(m));
+  const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
+  const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
+  const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
+  const stats = computeStats(boughtM, soldM, expM, dueSettledSellAmt, dueSettledBuyAmt);
+
+  document.getElementById('monthlyCard').style.display='block';
+  document.getElementById('monthlyTitle').textContent = '📅 ' + prettyMonth(m);
+  document.getElementById('mBuyCount').textContent = boughtM.length;
+  document.getElementById('mSellCount').textContent = soldM.length;
+  document.getElementById('mProfit').textContent = stats.totalProfit.toLocaleString('en-IN');
+  document.getElementById('mStock').textContent = stockRemaining;
+  document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+  lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
+}
+
+function shareWhatsapp(kind){
+  if(kind==='daily' && !lastReportText.daily) closeShop();
+  if(kind==='monthly' && !lastReportText.monthly) generateMonthly();
+  const url = 'https://wa.me/?text=' + encodeURIComponent(lastReportText[kind]);
+  window.open(url, '_blank');
+}
+function copyReport(kind){
+  if(kind==='daily' && !lastReportText.daily) closeShop();
+  if(kind==='monthly' && !lastReportText.monthly) generateMonthly();
+  navigator.clipboard.writeText(lastReportText[kind]).then(()=>{
+    alert('Report copy ho gayi — ab kahin bhi paste kar sakte hain.');
+  }).catch(()=>{ alert('Copy nahi ho saka, report manually copy karein.'); });
+}
+
+function getLast6Months(){
+  const arr = [];
+  const now = new Date();
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    arr.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+  }
+  return arr;
+}
+
+function renderDashboard(){
+  const months = getLast6Months();
+  const buyArr=[], saleArr=[], profitArr=[];
+  months.forEach(m=>{
+    const b = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
+    const s = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
+    buyArr.push(b.reduce((a,p)=>a+p.buyPrice,0));
+    saleArr.push(s.reduce((a,p)=>a+p.sellPrice,0));
+    profitArr.push(s.reduce((a,p)=>a+(p.sellPrice-p.buyPrice),0));
+  });
+  const monthLabels = months.map(m=>prettyMonth(m).split(' ')[0].slice(0,3)+' '+m.slice(2,4));
+
+  const goldDark='#d4a237', red='#e08585', green='#8fd19e';
+
+  if(chartMonthlyRef) chartMonthlyRef.destroy();
+  chartMonthlyRef = new Chart(document.getElementById('chartMonthly'), {
+    type:'bar',
+    data:{ labels: monthLabels, datasets:[
+      {label:'Buy', data:buyArr, backgroundColor:'#8a7a5e'},
+      {label:'Sale', data:saleArr, backgroundColor:goldDark},
+      {label:'Profit', data:profitArr, backgroundColor:green}
+    ]},
+    options:{ responsive:true, plugins:{legend:{labels:{color:'#f2ead9', font:{size:10}}}},
+      scales:{ x:{ticks:{color:'#a9967a'}, grid:{color:'#2a2417'}}, y:{ticks:{color:'#a9967a'}, grid:{color:'#2a2417'}} } }
+  });
+
+  const m = thisMonthStr();
+  const daysInMonth = new Date(parseInt(m.split('-')[0]), parseInt(m.split('-')[1]), 0).getDate();
+  const dayLabels=[], dayProfit=[];
+  for(let d=1; d<=daysInMonth; d++){
+    const ds = m+'-'+String(d).padStart(2,'0');
+    const soldOnDay = phones.filter(p=>p.sellDate===ds && p.status==='sold');
+    dayLabels.push(d);
+    dayProfit.push(soldOnDay.reduce((a,p)=>a+(p.sellPrice-p.buyPrice),0));
+  }
+  if(chartTrendRef) chartTrendRef.destroy();
+  chartTrendRef = new Chart(document.getElementById('chartTrend'), {
+    type:'line',
+    data:{ labels: dayLabels, datasets:[{ label:'Profit', data:dayProfit, borderColor:'#e9c46a', backgroundColor:'rgba(233,196,106,0.15)', fill:true, tension:0.3, pointRadius:2 }] },
+    options:{ responsive:true, plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{color:'#a9967a', font:{size:9}}, grid:{display:false}}, y:{ticks:{color:'#a9967a'}, grid:{color:'#2a2417'}} } }
+  });
+
+  const boughtM = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
+  const soldM = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
+  const expM = expenses.filter(e=>e.date && e.date.startsWith(m));
+  const totalBuyM = boughtM.reduce((a,p)=>a+p.buyPrice,0);
+  const totalSaleM = soldM.reduce((a,p)=>a+p.sellPrice,0);
+  const totalExpM = expM.reduce((a,e)=>a+e.amount,0);
+  if(chartBreakRef) chartBreakRef.destroy();
+  chartBreakRef = new Chart(document.getElementById('chartBreak'), {
+    type:'doughnut',
+    data:{ labels:['Buy','Sale','Kharcha'], datasets:[{ data:[totalBuyM, totalSaleM, totalExpM], backgroundColor:['#8a7a5e', goldDark, red] }] },
+    options:{ responsive:true, plugins:{legend:{position:'bottom', labels:{color:'#f2ead9', font:{size:11}}}} }
+  });
+}
+
+function exportBackup(){
+  const data = { phones, expenses, payments, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'golden-mobile-zone-backup-'+todayStr()+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+loadData();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
