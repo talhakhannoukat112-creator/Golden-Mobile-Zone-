@@ -169,8 +169,9 @@
   <div class="section" id="sec-sell">
     <div class="card">
       <h2>📤 Phone Sell Kiya</h2>
-      <label>Stock Se Phone Chunain</label>
-      <select id="sellSelect" onchange="updateSellImei()"></select>
+      <label>Stock Se Phone Chunain (type bhi kar sakte ho)</label>
+      <input list="phoneOptions" id="sellSearch" placeholder="Model ya IMEI likhna shuru karein..." oninput="updateSellImei()" autocomplete="off">
+      <datalist id="phoneOptions"></datalist>
       <label>IMEI Number</label>
       <input id="sellImei" placeholder="Phone chunte hi yahan aa jayega" readonly>
       <label>Total Sell Price (Rs)</label>
@@ -412,35 +413,39 @@ function addBuy(){
   renderInventory(); renderSellOptions(); renderUdhaar(); renderTodayEntries();
 }
 
+function phoneLabel(p){ return p.model + (p.imei ? ' — '+p.imei : ''); }
+
 function renderSellOptions(){
-  const sel = document.getElementById('sellSelect');
+  const dl = document.getElementById('phoneOptions');
   const stock = phones.filter(p=>p.status==='in_stock');
-  if(stock.length===0){ sel.innerHTML = '<option value="">-- Stock khali hai --</option>'; document.getElementById('sellImei').value=''; return; }
-  sel.innerHTML = stock.map(p=>`<option value="${p.id}">${p.model}${p.imei?(' — '+p.imei):''} (Buy: ${money(p.buyPrice)})</option>`).join('');
+  if(stock.length===0){
+    dl.innerHTML = '';
+    document.getElementById('sellSearch').placeholder = '-- Stock khali hai --';
+    document.getElementById('sellImei').value='';
+    return;
+  }
+  dl.innerHTML = stock.map(p=>`<option value="${phoneLabel(p)}">`).join('');
   updateSellImei();
 }
 
+function findStockPhoneByLabel(label){
+  return phones.find(p=>p.status==='in_stock' && phoneLabel(p)===label);
+}
+
 function updateSellImei(){
-  const id = document.getElementById('sellSelect').value;
-  const ph = phones.find(p=>p.id===id);
+  const val = document.getElementById('sellSearch').value.trim();
+  const ph = findStockPhoneByLabel(val);
   document.getElementById('sellImei').value = ph ? (ph.imei || 'IMEI darj nahi tha') : '';
 }
 
 function addSell(){
-  const id = document.getElementById('sellSelect').value;
+  const label = document.getElementById('sellSearch').value.trim();
   const total = parseFloat(document.getElementById('sellPrice').value);
   const paidRaw = document.getElementById('sellPaid').value;
   const customer = document.getElementById('sellCustomer').value.trim();
   const msg = document.getElementById('sellMsg');
-  if(!id){ msg.className='msg err'; msg.textContent='Pehle stock mein phone add karein.'; return; }
+  const ph = findStockPhoneByLabel(label);
+  if(!ph){ msg.className='msg err'; msg.textContent='Stock mein se sahi phone chunein (suggestion list se tap karein).'; return; }
   if(!total){ msg.className='msg err'; msg.textContent='Sell price likhein.'; return; }
   let paid = paidRaw==='' ? total : parseFloat(paidRaw);
-  if(isNaN(paid)) paid = total;
-  paid = Math.max(0, Math.min(paid, total));
-  const due = total - paid;
-  const ph = phones.find(p=>p.id===id);
-  ph.status='sold'; ph.sellPrice=total; ph.sellPaid=paid; ph.sellDue=due; ph.sellDate=todayStr(); ph.customerName = due>0 ? customer : (customer||'');
-  saveData();
-  document.getElementById('sellPrice').value='';
-  document.getElementById('sellPaid').value='';
-  document.getElementById('se
+  if(isNaN(paid)) paid 
