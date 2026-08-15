@@ -13,6 +13,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <style>
   :root{ --gold:#d4a237; }
   *{box-sizing:border-box;}
@@ -145,10 +148,37 @@
   .suggest-item:last-child{border-bottom:none;}
   .suggest-item:active{background:#241d12;}
   .suggest-item .sub{color:#8a7a5e;font-size:11px;margin-top:2px;}
+  .login-screen{
+    position:fixed;inset:0;background:#0e0c08;z-index:1000;
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  }
+  .login-box{width:100%;max-width:360px;}
+  .login-box h1{
+    text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:26px;
+    background:linear-gradient(90deg,#e9c46a,#d4a237,#f1d28a);
+    -webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px;
+  }
+  .login-box p{text-align:center;color:#a9967a;font-size:12px;margin:0 0 24px;letter-spacing:1px;text-transform:uppercase;}
 </style>
 </head>
 <body>
 
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <h1>Golden Mobile Zone</h1>
+    <p>Sirf shop ke logon ke liye</p>
+    <div class="card">
+      <label>Email</label>
+      <input id="loginEmail" type="email" placeholder="shop ka email" autocomplete="username">
+      <label>Password</label>
+      <input id="loginPass" type="password" placeholder="password" autocomplete="current-password">
+      <button class="primary" onclick="doLogin()">Login Karo</button>
+      <div class="msg" id="loginMsg"></div>
+    </div>
+  </div>
+</div>
+
+<div id="appRoot" style="display:none;">
 <header>
   <h1>Golden Mobile Zone</h1>
   <p>Roz ka hisaab • ek jagah</p>
@@ -362,6 +392,8 @@
   <div class="tab" data-sec="sec-report" onclick="showTab('sec-report',this)"><span class="ic">📊</span>Reports</div>
 </div>
 
+</div>
+
 <script>
 let phones = [];
 let expenses = [];
@@ -387,7 +419,70 @@ function prettyMonth(m){
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function money(n){ return 'Rs ' + Number(n||0).toLocaleString('en-IN'); }
 
-// Storage layer: uses the phone's own local storage (works standalone on GitHub Pages),
+// ====== FIREBASE SETUP (paste your own project's values here) ======
+// Instructions: create a free Firebase project, enable "Realtime Database", then
+// paste the config object from Project Settings here. Leave as-is to keep using
+// simple per-phone local storage (no sync between phones).
+const firebaseConfig = {
+  apiKey: "AIzaSyDtvEWvvMCekRMTuh30bP3d-h6J1wRXPVE",
+  databaseURL: "https://golden-mobile-zone-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "golden-mobile-zone"
+};
+let fbEnabled = false;
+let fbRef = null;
+let fbAuthEnabled = false;
+try{
+  if(firebaseConfig.apiKey && !String(firebaseConfig.apiKey).includes('PASTE') && typeof firebase !== 'undefined'){
+    firebase.initializeApp(firebaseConfig);
+    fbRef = firebase.database().ref('goldenMobileZoneData');
+    fbEnabled = true;
+    fbAuthEnabled = true;
+  }
+}catch(e){ console.error('Firebase init failed, falling back to local storage', e); fbEnabled = false; fbAuthEnabled = false; }
+// ====== END FIREBASE SETUP ======
+
+function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const msg = document.getElementById('loginMsg');
+  if(!email || !pass){ msg.className='msg err'; msg.textContent='Email aur password dono likhein.'; return; }
+  msg.className='msg'; msg.textContent='Login ho raha hai...';
+  firebase.auth().signInWithEmailAndPassword(email, pass)
+    .catch((err)=>{
+      msg.className='msg err';
+      msg.textContent = err.code==='auth/invalid-credential' || err.code==='auth/wrong-password' || err.code==='auth/user-not-found'
+        ? 'Email ya password ghalat hai.' : 'Login nahi ho saka: '+err.message;
+    });
+}
+
+let appStarted = false;
+function startApp(){
+  if(appStarted) return;
+  appStarted = true;
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appRoot').style.display='block';
+  loadData();
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+}
+
+if(fbAuthEnabled){
+  firebase.auth().onAuthStateChanged((user)=>{
+    if(user){ startApp(); }
+    else{
+      document.getElementById('loginScreen').style.display='flex';
+      document.getElementById('appRoot').style.display='none';
+    }
+  });
+}else{
+  // No Firebase configured — skip login, run app normally with local storage only.
+  document.getElementById('loginScreen').style.display='none';
+  startApp();
+}
+
+// Storage layer: uses Firebase (live sync across phones) if configured above,
+// otherwise falls back to the phone's own local storage (no cross-phone sync),
 // and falls back to Claude's artifact storage only if that's the environment running it.
 const hasClaudeStorage = (typeof window.storage !== 'undefined' && window.storage && typeof window.storage.get === 'function');
 
@@ -405,13 +500,32 @@ async function storageSet(key, value){
 }
 
 async function loadData(){
+  document.getElementById('monthPicker').value = thisMonthStr();
+  if(fbEnabled){
+    fbRef.on('value', (snap)=>{
+      const val = snap.val() || {};
+      phones = val.phones || [];
+      expenses = val.expenses || [];
+      payments = val.payments || [];
+      refreshAllViews();
+    }, (err)=>{ console.error('Firebase read failed', err); });
+    return;
+  }
   try{ const p = await storageGet('phones'); phones = p ? JSON.parse(p) : []; }catch(e){ phones = []; }
   try{ const e = await storageGet('expenses'); expenses = e ? JSON.parse(e) : []; }catch(e){ expenses = []; }
   try{ const pay = await storageGet('payments'); payments = pay ? JSON.parse(pay) : []; }catch(e){ payments = []; }
-  document.getElementById('monthPicker').value = thisMonthStr();
+  refreshAllViews();
+}
+
+function refreshAllViews(){
   renderInventory(); renderSellOptions(); renderTodayExpenses(); renderUdhaar(); renderTodayEntries();
 }
+
 async function saveData(){
+  if(fbEnabled){
+    try{ await fbRef.set({ phones, expenses, payments }); }catch(e){ console.error('Firebase save failed', e); alert('Internet check karein — data save nahi ho saka.'); }
+    return;
+  }
   await storageSet('phones', JSON.stringify(phones));
   await storageSet('expenses', JSON.stringify(expenses));
   await storageSet('payments', JSON.stringify(payments));
@@ -1033,13 +1147,7 @@ function exportBackup(){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-loadData();
-
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  });
-}
+// App starts only after successful login (see startApp() above)
 </script>
 </body>
 </html>
