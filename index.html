@@ -283,27 +283,25 @@
 
     <!-- DAILY -->
     <div class="subview active" id="sub-daily">
-      <div class="card">
-        <h2>🗑 Aaj Ki Entries (Delete Karne Ke Liye)</h2>
-        <div id="todayEntriesList"><div class="empty">Loading...</div></div>
-      </div>
-      <div class="card">
-        <h2>🔒 Shop Band Karna Hai?</h2>
-        <p style="font-size:13px;color:#c9bda3;margin:0 0 4px;">Yeh button dabate hi aaj ka pura hisaab tayar ho jayega.</p>
-        <button class="primary" onclick="closeShop()">🔴 Shop OFF — Aaj Ka Hisaab Nikalo</button>
-      </div>
-      <div class="card" id="reportCard" style="display:none;">
-        <h2 id="reportDate">📅 Report</h2>
+      <div class="card" id="reportCard">
+        <h2 id="reportDate">📅 Aaj Ka Hisaab</h2>
         <div class="stat-grid">
           <div class="stat"><div class="n" id="rBuyCount">0</div><div class="l">Phones Kharide</div></div>
           <div class="stat"><div class="n" id="rSellCount">0</div><div class="l">Phones Beche</div></div>
           <div class="stat"><div class="n" id="rProfit">0</div><div class="l">Aaj Ka Profit (Rs)</div></div>
           <div class="stat"><div class="n" id="rStock">0</div><div class="l">Total Stock Baaki</div></div>
+          <div class="stat"><div class="n" id="rCashIn" style="color:#8fd19e">0</div><div class="l">Total Cash Aaya</div></div>
+          <div class="stat"><div class="n" id="rCashOut" style="color:#e08585">0</div><div class="l">Total Cash Gaya</div></div>
         </div>
         <div id="reportDetails"></div>
+        <button class="primary" onclick="closeShop()">🔄 Hisaab Refresh Karo</button>
         <button class="secondary" onclick="shareWhatsapp('daily')">📲 WhatsApp Par Report Bhejo</button>
         <button class="secondary" onclick="copyReport('daily')">📋 Report Copy Karo</button>
         <button class="secondary" onclick="exportExcel('daily')">📊 Excel Mein Download Karo</button>
+      </div>
+      <div class="card">
+        <h2>🗑 Aaj Ki Entries (Delete Karne Ke Liye)</h2>
+        <div id="todayEntriesList"><div class="empty">Loading...</div></div>
       </div>
     </div>
 
@@ -322,6 +320,8 @@
           <div class="stat"><div class="n" id="mSellCount">0</div><div class="l">Phones Beche</div></div>
           <div class="stat"><div class="n" id="mProfit">0</div><div class="l">Mahine Ka Profit (Rs)</div></div>
           <div class="stat"><div class="n" id="mStock">0</div><div class="l">Total Stock Baaki</div></div>
+          <div class="stat"><div class="n" id="mCashIn" style="color:#8fd19e">0</div><div class="l">Total Cash Aaya</div></div>
+          <div class="stat"><div class="n" id="mCashOut" style="color:#e08585">0</div><div class="l">Total Cash Gaya</div></div>
         </div>
         <div id="monthlyDetails"></div>
         <button class="secondary" onclick="shareWhatsapp('monthly')">📲 WhatsApp Par Report Bhejo</button>
@@ -345,6 +345,8 @@
           <div class="stat"><div class="n" id="cSellCount">0</div><div class="l">Phones Beche</div></div>
           <div class="stat"><div class="n" id="cProfit">0</div><div class="l">Us Din Ka Profit (Rs)</div></div>
           <div class="stat"><div class="n" id="cStock">0</div><div class="l">Total Stock Baaki</div></div>
+          <div class="stat"><div class="n" id="cCashIn" style="color:#8fd19e">0</div><div class="l">Total Cash Aaya</div></div>
+          <div class="stat"><div class="n" id="cCashOut" style="color:#e08585">0</div><div class="l">Total Cash Gaya</div></div>
         </div>
         <div id="customDetails"></div>
         <button class="secondary" onclick="shareWhatsapp('custom')">📲 WhatsApp Par Report Bhejo</button>
@@ -519,6 +521,7 @@ async function loadData(){
 
 function refreshAllViews(){
   renderInventory(); renderSellOptions(); renderTodayExpenses(); renderUdhaar(); renderTodayEntries();
+  closeShop();
 }
 
 async function saveData(){
@@ -539,7 +542,7 @@ function showTab(id, el){
   if(id==='sec-sell') renderSellOptions();
   if(id==='sec-inv') renderInventory();
   if(id==='sec-exp') renderTodayExpenses();
-  if(id==='sec-report') renderTodayEntries();
+  if(id==='sec-report'){ closeShop(); renderTodayEntries(); }
   if(id==='sec-udhaar') renderUdhaar();
 }
 function showSub(id, el){
@@ -547,6 +550,7 @@ function showSub(id, el){
   document.querySelectorAll('.subtab').forEach(t=>t.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   el.classList.add('active');
+  if(id==='sub-daily'){ closeShop(); renderTodayEntries(); }
   if(id==='sub-dash') renderDashboard();
 }
 
@@ -899,6 +903,8 @@ function closeShop(){
   document.getElementById('rSellCount').textContent = r.soldToday.length;
   document.getElementById('rProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
   document.getElementById('rStock').textContent = r.stockList.length;
+  document.getElementById('rCashIn').textContent = r.stats.cashIn.toLocaleString('en-IN');
+  document.getElementById('rCashOut').textContent = r.stats.cashOut.toLocaleString('en-IN');
   document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
   lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
   lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
@@ -916,6 +922,8 @@ function generateCustomDate(){
   document.getElementById('cSellCount').textContent = r.soldToday.length;
   document.getElementById('cProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
   document.getElementById('cStock').textContent = r.stockList.length;
+  document.getElementById('cCashIn').textContent = r.stats.cashIn.toLocaleString('en-IN');
+  document.getElementById('cCashOut').textContent = r.stats.cashOut.toLocaleString('en-IN');
   document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
   lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
   lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
@@ -937,6 +945,8 @@ function generateMonthly(){
   document.getElementById('mSellCount').textContent = soldM.length;
   document.getElementById('mProfit').textContent = stats.totalProfit.toLocaleString('en-IN');
   document.getElementById('mStock').textContent = stockList.length;
+  document.getElementById('mCashIn').textContent = stats.cashIn.toLocaleString('en-IN');
+  document.getElementById('mCashOut').textContent = stats.cashOut.toLocaleString('en-IN');
   document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
   lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
   lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, stats, stockRemaining:stockList.length, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
