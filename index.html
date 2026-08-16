@@ -805,7 +805,7 @@ function computeOutstandingTotals(){
   return {totalCustomerDue, totalSellerDue};
 }
 
-function buildDetailsHTML(boughtList, soldList, expList, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt){
+function buildDetailsHTML(boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt){
   const out = computeOutstandingTotals();
   let d = '';
   d += `<div class="rep-title">📥 Kharide Gaye Phones (${boughtList.length})</div>`;
@@ -831,13 +831,18 @@ function buildDetailsHTML(boughtList, soldList, expList, stats, stockRemaining, 
   d += `<div class="rep-line"><span><b>Ab Total Baaqi (Customers Se Lena)</b></span><span><b>${money(out.totalCustomerDue)}</b></span></div>`;
   d += `<div class="rep-line"><span><b>Ab Total Baaqi (Sellers Ko Dena)</b></span><span><b>${money(out.totalSellerDue)}</b></span></div>`;
 
-  d += `<div class="rep-title">📦 Stock & Cash Summary</div>`;
-  d += `<div class="rep-line"><span>Total Phones Stock Mein</span><span>${stockRemaining}</span></div>`;
-  d += `<div class="rep-line"><span><b>Actual Cash In/Out (Net)</b></span><span><b>${money(stats.netCash)}</b></span></div>`;
+  d += `<div class="rep-title">📦 Abhi Stock Mein Mojood (${stockList.length})</div>`;
+  if(stockList.length===0) d += `<div class="rep-line"><span>Stock khali hai</span></div>`;
+  stockList.forEach(p=>{ d += `<div class="rep-line"><span>${p.model}${p.color?' ('+p.color+')':''}${p.imei?' — '+p.imei:''}</span><span>${money(p.buyPrice)}</span></div>`; });
+
+  d += `<div class="rep-title">💰 Cash Summary</div>`;
+  d += `<div class="rep-line"><span>Total Cash Aaya (Sale se + Udhaar Wasool)</span><span>${money(stats.cashIn)}</span></div>`;
+  d += `<div class="rep-line"><span>Total Cash Gaya (Buy + Udhaar Ada + Kharcha)</span><span>${money(stats.cashOut)}</span></div>`;
+  d += `<div class="rep-line"><span><b>Net Cash (In − Out)</b></span><span><b>${money(stats.netCash)}</b></span></div>`;
   return d;
 }
 
-function buildTextReport(title, boughtList, soldList, expList, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt){
+function buildTextReport(title, boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt){
   const out = computeOutstandingTotals();
   let t = `*Golden Mobile Zone*\n📅 ${title}\n\n`;
   t += `*📥 Phones Bought (${boughtList.length})*\n`;
@@ -864,8 +869,12 @@ function buildTextReport(title, boughtList, soldList, expList, stats, stockRemai
   t += `Ab Total Baaqi (Customers Se Lena): ${money(out.totalCustomerDue)}\n`;
   t += `Ab Total Baaqi (Sellers Ko Dena): ${money(out.totalSellerDue)}\n\n`;
 
-  t += `*📦 Stock Remaining:* ${stockRemaining} phones\n`;
-  t += `*💰 Actual Net Cash:* ${money(stats.netCash)}\n`;
+  t += `*📦 Stock Mein (${stockList.length}):*\n`;
+  if(stockList.length===0) t += `— khali —\n`;
+  stockList.forEach(p=> t += `• ${p.model}${p.color?' ('+p.color+')':''}${p.imei?' — '+p.imei:''}\n`);
+  t += `\n*💰 Cash Aaya:* ${money(stats.cashIn)}\n`;
+  t += `*💸 Cash Gaya:* ${money(stats.cashOut)}\n`;
+  t += `*⚖️ Net (In − Out):* ${money(stats.netCash)}\n`;
   return t;
 }
 
@@ -873,11 +882,11 @@ function buildReportForDate(t){
   const boughtToday = phones.filter(p=>p.buyDate===t);
   const soldToday = phones.filter(p=>p.sellDate===t && p.status==='sold');
   const expToday = expenses.filter(e=>e.date===t);
-  const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
+  const stockList = phones.filter(p=>p.status==='in_stock');
   const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
   const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
   const stats = computeStats(boughtToday, soldToday, expToday, dueSettledSellAmt, dueSettledBuyAmt);
-  return { boughtToday, soldToday, expToday, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt, stats };
+  return { boughtToday, soldToday, expToday, stockList, dueSettledSellAmt, dueSettledBuyAmt, stats };
 }
 
 function closeShop(){
@@ -889,10 +898,10 @@ function closeShop(){
   document.getElementById('rBuyCount').textContent = r.boughtToday.length;
   document.getElementById('rSellCount').textContent = r.soldToday.length;
   document.getElementById('rProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
-  document.getElementById('rStock').textContent = r.stockRemaining;
-  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockRemaining, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
+  document.getElementById('rStock').textContent = r.stockList.length;
+  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
 }
 
 function generateCustomDate(){
@@ -906,10 +915,10 @@ function generateCustomDate(){
   document.getElementById('cBuyCount').textContent = r.boughtToday.length;
   document.getElementById('cSellCount').textContent = r.soldToday.length;
   document.getElementById('cProfit').textContent = r.stats.totalProfit.toLocaleString('en-IN');
-  document.getElementById('cStock').textContent = r.stockRemaining;
-  document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockRemaining, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockRemaining, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
+  document.getElementById('cStock').textContent = r.stockList.length;
+  document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
+  lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
 }
 
 function generateMonthly(){
@@ -917,7 +926,7 @@ function generateMonthly(){
   const boughtM = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
   const soldM = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
   const expM = expenses.filter(e=>e.date && e.date.startsWith(m));
-  const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
+  const stockList = phones.filter(p=>p.status==='in_stock');
   const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
   const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
   const stats = computeStats(boughtM, soldM, expM, dueSettledSellAmt, dueSettledBuyAmt);
@@ -927,10 +936,10 @@ function generateMonthly(){
   document.getElementById('mBuyCount').textContent = boughtM.length;
   document.getElementById('mSellCount').textContent = soldM.length;
   document.getElementById('mProfit').textContent = stats.totalProfit.toLocaleString('en-IN');
-  document.getElementById('mStock').textContent = stockRemaining;
-  document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
-  lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt);
-  lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, stats, stockRemaining, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
+  document.getElementById('mStock').textContent = stockList.length;
+  document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
+  lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
+  lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, stats, stockRemaining:stockList.length, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
 }
 
 function shareWhatsapp(kind){
