@@ -378,6 +378,8 @@
         <h2>💾 Data Ka Backup</h2>
         <p style="font-size:12px;color:#a9967a;margin:0 0 8px;">Poora record ek file mein save kar lein — phone kho jaye to bhi data mehfooz rahega.</p>
         <button class="secondary" onclick="exportBackup()">⬇️ Backup File Download Karo</button>
+        <input type="file" id="restoreFileInput" accept="application/json" style="display:none" onchange="handleRestoreFile(event)">
+        <button class="secondary" style="border-color:#7a3a3a;color:#e08585;" onclick="document.getElementById('restoreFileInput').click()">♻️ Backup Se Data Wapis Lao</button>
       </div>
     </div>
 
@@ -1155,6 +1157,33 @@ function exportExcel(kind){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sellSheet.length?sellSheet:[{'Model':'-- No sales --'}]), 'Sell');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expSheet.length?expSheet:[{'Description':'-- No expenses --'}]), 'Expenses');
   XLSX.writeFile(wb, data.filename + '.xlsx');
+}
+
+function handleRestoreFile(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    let data;
+    try{ data = JSON.parse(e.target.result); }
+    catch(err){ alert('Ye file sahi backup file nahi hai (JSON parse nahi hui).'); event.target.value=''; return; }
+
+    if(!data || !Array.isArray(data.phones) || !Array.isArray(data.expenses) || !Array.isArray(data.payments)){
+      alert('Ye file sahi backup format mein nahi hai.'); event.target.value=''; return;
+    }
+
+    const confirmMsg = `Is backup mein ${data.phones.length} phones, ${data.expenses.length} kharche, aur ${data.payments.length} udhaar payments hain (${data.exportedAt ? new Date(data.exportedAt).toLocaleDateString('en-GB') : 'date na maloom'}).\n\nYe AABHI KA POORA DATA REPLACE KAR DEGA. Pakka aage badhna hai?`;
+    if(!confirm(confirmMsg)){ event.target.value=''; return; }
+
+    phones = data.phones;
+    expenses = data.expenses;
+    payments = data.payments;
+    saveData();
+    refreshAllViews();
+    alert('✅ Data wapis load ho gaya.');
+    event.target.value='';
+  };
+  reader.readAsText(file);
 }
 
 function exportBackup(){
