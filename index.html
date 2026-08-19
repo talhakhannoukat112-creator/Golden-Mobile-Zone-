@@ -253,6 +253,12 @@
   <!-- INVENTORY -->
   <div class="section" id="sec-inv">
     <div class="card">
+      <div class="stat-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="stat"><div class="n" id="invCount">0</div><div class="l">Total Phones Baaki</div></div>
+        <div class="stat"><div class="n" id="invValue" style="color:#e9c46a">0</div><div class="l">Total Stock Value (Rs)</div></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>📦 Stock Mein Mojood Phones</h2>
       <input class="search" id="invSearch" placeholder="Model ya IMEI se search karein" oninput="renderInventory()">
       <div id="invList"><div class="empty">Loading...</div></div>
@@ -669,7 +675,12 @@ function addSell(){
 function renderInventory(){
   const list = document.getElementById('invList');
   const q = (document.getElementById('invSearch')?.value || '').toLowerCase();
-  let stock = phones.filter(p=>p.status==='in_stock');
+  const fullStock = phones.filter(p=>p.status==='in_stock');
+
+  document.getElementById('invCount').textContent = fullStock.length;
+  document.getElementById('invValue').textContent = fullStock.reduce((s,p)=>s+p.buyPrice,0).toLocaleString('en-IN');
+
+  let stock = fullStock;
   if(q) stock = stock.filter(p=> p.model.toLowerCase().includes(q) || (p.imei||'').toLowerCase().includes(q));
   if(stock.length===0){ list.innerHTML='<div class="empty">Koi phone stock mein nahi.</div>'; return; }
   list.innerHTML = stock.map(p=>`
