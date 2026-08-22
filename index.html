@@ -248,6 +248,17 @@
       <h2>🧾 Aaj Ke Kharcha</h2>
       <div id="todayExpList"><div class="empty">Loading...</div></div>
     </div>
+    <div class="card">
+      <h2>🏠 Ghar Ka Kharcha / Paisay Nikale</h2>
+      <p style="font-size:11.5px;color:#7a6c53;margin:0 0 4px;">Ye business kharcha nahi hai — sirf jab jeb se paisay kisi aur wajah se (ghar, personal) nikalein, taake cash hisaab match ho jaye. Profit par asar nahi padega.</p>
+      <label>Kis Liye Nikale</label>
+      <input id="withdrawDesc" placeholder="e.g. Ghar ka kharcha">
+      <label>Amount (Rs)</label>
+      <input id="withdrawAmt" type="number" inputmode="numeric" placeholder="e.g. 1000">
+      <button class="primary" onclick="addWithdrawal()">Nikasi Add Karo</button>
+      <div class="msg" id="withdrawMsg"></div>
+      <div id="todayWithdrawList" style="margin-top:10px;"><div class="empty">Loading...</div></div>
+    </div>
   </div>
 
   <!-- INVENTORY -->
@@ -291,6 +302,15 @@
     <div class="subview active" id="sub-daily">
       <div class="card" id="reportCard">
         <h2 id="reportDate">📅 Aaj Ka Hisaab</h2>
+        <label>Jeb/Cash (agar khud se sahi karna ho, warna khud pichle din se aa jayega)</label>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <input id="openingBalanceInput" type="number" inputmode="numeric" placeholder="e.g. 500" style="flex:1;">
+          <button class="mini" style="padding:10px 14px;" onclick="saveOpeningBalance('daily')">Set Karo</button>
+        </div>
+        <div class="hint" id="openingBalanceHint"></div>
+        <div class="stat" style="margin-top:12px;">
+          <div class="n" id="rExpectedCash">Rs 0</div><div class="l">Ab Jeb Mein Itna Cash Hona Chahiye</div>
+        </div>
         <div class="stat-grid">
           <div class="stat"><div class="n" id="rBuyCount">0</div><div class="l">Phones Kharide</div></div>
           <div class="stat"><div class="n" id="rSellCount">0</div><div class="l">Phones Beche</div></div>
@@ -346,6 +366,15 @@
       </div>
       <div class="card" id="customCard" style="display:none;">
         <h2 id="customTitle">📅 Report</h2>
+        <label>Jeb/Cash (agar khud se sahi karna ho, warna khud pichle din se aa jayega)</label>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <input id="customOpeningBalanceInput" type="number" inputmode="numeric" placeholder="e.g. 500" style="flex:1;">
+          <button class="mini" style="padding:10px 14px;" onclick="saveOpeningBalance('custom')">Set Karo</button>
+        </div>
+        <div class="hint" id="customOpeningBalanceHint"></div>
+        <div class="stat" style="margin-top:12px;">
+          <div class="n" id="cExpectedCash">Rs 0</div><div class="l">Us Din Ke Aakhir Mein Itna Cash Hona Chahiye</div>
+        </div>
         <div class="stat-grid">
           <div class="stat"><div class="n" id="cBuyCount">0</div><div class="l">Phones Kharide</div></div>
           <div class="stat"><div class="n" id="cSellCount">0</div><div class="l">Phones Beche</div></div>
@@ -408,6 +437,8 @@
 let phones = [];
 let expenses = [];
 let payments = []; // {id, phoneId, type:'sell_due'|'buy_due', amount, date, name}
+let withdrawals = []; // {id, desc, amount, date} -- personal/home cash taken out, NOT a business expense
+let openingBalances = {}; // { 'YYYY-MM-DD': amount }
 let lastReportText = { daily:"", monthly:"", custom:"" };
 let lastReportData = { daily:null, monthly:null, custom:null };
 let chartMonthlyRef, chartTrendRef, chartBreakRef;
@@ -517,6 +548,8 @@ async function loadData(){
       phones = val.phones || [];
       expenses = val.expenses || [];
       payments = val.payments || [];
+      withdrawals = val.withdrawals || [];
+      openingBalances = val.openingBalances || {};
       refreshAllViews();
     }, (err)=>{ console.error('Firebase read failed', err); });
     return;
@@ -524,22 +557,26 @@ async function loadData(){
   try{ const p = await storageGet('phones'); phones = p ? JSON.parse(p) : []; }catch(e){ phones = []; }
   try{ const e = await storageGet('expenses'); expenses = e ? JSON.parse(e) : []; }catch(e){ expenses = []; }
   try{ const pay = await storageGet('payments'); payments = pay ? JSON.parse(pay) : []; }catch(e){ payments = []; }
+  try{ const w = await storageGet('withdrawals'); withdrawals = w ? JSON.parse(w) : []; }catch(e){ withdrawals = []; }
+  try{ const ob = await storageGet('openingBalances'); openingBalances = ob ? JSON.parse(ob) : {}; }catch(e){ openingBalances = {}; }
   refreshAllViews();
 }
 
 function refreshAllViews(){
-  renderInventory(); renderSellOptions(); renderTodayExpenses(); renderUdhaar(); renderTodayEntries();
+  renderInventory(); renderSellOptions(); renderTodayExpenses(); renderTodayWithdrawals(); renderUdhaar(); renderTodayEntries();
   closeShop();
 }
 
 async function saveData(){
   if(fbEnabled){
-    try{ await fbRef.set({ phones, expenses, payments }); }catch(e){ console.error('Firebase save failed', e); alert('Internet check karein — data save nahi ho saka.'); }
+    try{ await fbRef.set({ phones, expenses, payments, withdrawals, openingBalances }); }catch(e){ console.error('Firebase save failed', e); alert('Internet check karein — data save nahi ho saka.'); }
     return;
   }
   await storageSet('phones', JSON.stringify(phones));
   await storageSet('expenses', JSON.stringify(expenses));
   await storageSet('payments', JSON.stringify(payments));
+  await storageSet('withdrawals', JSON.stringify(withdrawals));
+  await storageSet('openingBalances', JSON.stringify(openingBalances));
 }
 
 function showTab(id, el){
@@ -549,7 +586,7 @@ function showTab(id, el){
   el.classList.add('active');
   if(id==='sec-sell') renderSellOptions();
   if(id==='sec-inv') renderInventory();
-  if(id==='sec-exp') renderTodayExpenses();
+  if(id==='sec-exp'){ renderTodayExpenses(); renderTodayWithdrawals(); }
   if(id==='sec-report'){ closeShop(); renderTodayEntries(); }
   if(id==='sec-udhaar') renderUdhaar();
 }
@@ -714,6 +751,38 @@ function renderTodayExpenses(){
     + `<div class="row"><div class="m">Total</div><div class="p">${money(todays.reduce((s,e)=>s+e.amount,0))}</div></div>`;
 }
 
+function addWithdrawal(){
+  const desc = document.getElementById('withdrawDesc').value.trim();
+  const amt = parseFloat(document.getElementById('withdrawAmt').value);
+  const msg = document.getElementById('withdrawMsg');
+  if(!desc || !amt){ msg.className='msg err'; msg.textContent='Detail aur amount likhein.'; return; }
+  withdrawals.push({id:uid(), desc, amount:amt, date:todayStr()});
+  saveData();
+  document.getElementById('withdrawDesc').value='';
+  document.getElementById('withdrawAmt').value='';
+  msg.className='msg ok'; msg.textContent='✅ Nikasi add ho gayi.';
+  renderTodayWithdrawals();
+  renderTodayEntries();
+}
+
+function renderTodayWithdrawals(){
+  const list = document.getElementById('todayWithdrawList');
+  if(!list) return;
+  const t = todayStr();
+  const todays = withdrawals.filter(w=>w.date===t);
+  if(todays.length===0){ list.innerHTML='<div class="empty">Aaj koi nikasi nahi hui.</div>'; return; }
+  list.innerHTML = todays.map(w=>`<div class="row"><div class="m">${w.desc}</div><div class="p">${money(w.amount)}</div><button class="del" onclick="deleteWithdrawal('${w.id}')">🗑</button></div>`).join('')
+    + `<div class="row"><div class="m">Total</div><div class="p">${money(todays.reduce((s,w)=>s+w.amount,0))}</div></div>`;
+}
+
+function deleteWithdrawal(id){
+  if(!confirm('Ye nikasi pakka delete karni hai?')) return;
+  withdrawals = withdrawals.filter(w=>w.id!==id);
+  saveData();
+  renderTodayWithdrawals();
+  renderTodayEntries();
+}
+
 // ---------- UDHAAR ----------
 function renderUdhaar(){
   const custBox = document.getElementById('custDueList');
@@ -787,7 +856,8 @@ function renderTodayEntries(){
   const bought = phones.filter(p=>p.buyDate===t);
   const sold = phones.filter(p=>p.sellDate===t && p.status==='sold');
   const exp = expenses.filter(e=>e.date===t);
-  if(bought.length===0 && sold.length===0 && exp.length===0){
+  const wd = withdrawals.filter(w=>w.date===t);
+  if(bought.length===0 && sold.length===0 && exp.length===0 && wd.length===0){
     box.innerHTML = '<div class="empty">Aaj abhi tak koi entry nahi hui.</div>'; return;
   }
   let html = '';
@@ -800,21 +870,26 @@ function renderTodayEntries(){
   exp.forEach(e=>{
     html += `<div class="row"><div><div class="m">💸 ${e.desc}</div><div class="sub">Kharcha</div></div><div class="p" style="margin-right:6px;">${money(e.amount)}</div><button class="del" onclick="deleteExpense('${e.id}')">🗑</button></div>`;
   });
+  wd.forEach(w=>{
+    html += `<div class="row"><div><div class="m">🏠 ${w.desc}</div><div class="sub">Nikasi (Ghar/Personal)</div></div><div class="p" style="margin-right:6px;">${money(w.amount)}</div><button class="del" onclick="deleteWithdrawal('${w.id}')">🗑</button></div>`;
+  });
   box.innerHTML = html;
 }
 
 // ---------- REPORTS ----------
-function computeStats(boughtList, soldList, expList, dueSettledSellAmt, dueSettledBuyAmt){
+function computeStats(boughtList, soldList, expList, dueSettledSellAmt, dueSettledBuyAmt, withdrawList){
+  withdrawList = withdrawList || [];
   const totalBuy = boughtList.reduce((s,p)=>s+p.buyPrice,0);
   const totalSale = soldList.reduce((s,p)=>s+p.sellPrice,0);
   const totalProfit = soldList.reduce((s,p)=>s+(p.sellPrice-p.buyPrice),0);
   const totalExp = expList.reduce((s,e)=>s+e.amount,0);
+  const totalWithdraw = withdrawList.reduce((s,w)=>s+w.amount,0);
   const cashIn = soldList.reduce((s,p)=>s+p.sellPaid,0) + dueSettledSellAmt;
-  const cashOut = boughtList.reduce((s,p)=>s+p.buyPaid,0) + dueSettledBuyAmt + totalExp;
+  const cashOut = boughtList.reduce((s,p)=>s+p.buyPaid,0) + dueSettledBuyAmt + totalExp + totalWithdraw;
   const netCash = cashIn - cashOut;
   const dueCreatedSell = soldList.reduce((s,p)=>s+p.sellDue,0);
   const dueCreatedBuy = boughtList.reduce((s,p)=>s+p.buyDue,0);
-  return {totalBuy, totalSale, totalProfit, totalExp, netCash, cashIn, cashOut, dueCreatedSell, dueCreatedBuy};
+  return {totalBuy, totalSale, totalProfit, totalExp, totalWithdraw, netCash, cashIn, cashOut, dueCreatedSell, dueCreatedBuy};
 }
 function computeOutstandingTotals(){
   const totalCustomerDue = phones.filter(p=>p.status==='sold' && p.sellDue>0).reduce((s,p)=>s+p.sellDue,0);
@@ -822,7 +897,8 @@ function computeOutstandingTotals(){
   return {totalCustomerDue, totalSellerDue};
 }
 
-function buildDetailsHTML(boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt){
+function buildDetailsHTML(boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt, withdrawList){
+  withdrawList = withdrawList || [];
   const out = computeOutstandingTotals();
   let d = '';
   d += `<div class="rep-title">📥 Kharide Gaye Phones (${boughtList.length})</div>`;
@@ -839,6 +915,11 @@ function buildDetailsHTML(boughtList, soldList, expList, stats, stockList, dueSe
   if(expList.length===0) d += `<div class="rep-line"><span>Koi kharcha nahi</span></div>`;
   expList.forEach(e=>{ d += `<div class="rep-line"><span>${e.desc}</span><span>${money(e.amount)}</span></div>`; });
   d += `<div class="rep-line"><span><b>Total Kharcha</b></span><span><b>${money(stats.totalExp)}</b></span></div>`;
+
+  d += `<div class="rep-title">🏠 Ghar Ka Kharcha / Nikasi (${withdrawList.length})</div>`;
+  if(withdrawList.length===0) d += `<div class="rep-line"><span>Koi nikasi nahi</span></div>`;
+  withdrawList.forEach(w=>{ d += `<div class="rep-line"><span>${w.desc}</span><span>${money(w.amount)}</span></div>`; });
+  d += `<div class="rep-line"><span><b>Total Nikasi</b></span><span><b>${money(stats.totalWithdraw)}</b></span></div>`;
 
   d += `<div class="rep-title">🧾 Udhaar Ka Hisaab</div>`;
   d += `<div class="rep-line"><span>Naya Udhaar (customers se lena)</span><span>${money(stats.dueCreatedSell)}</span></div>`;
@@ -859,7 +940,8 @@ function buildDetailsHTML(boughtList, soldList, expList, stats, stockList, dueSe
   return d;
 }
 
-function buildTextReport(title, boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt){
+function buildTextReport(title, boughtList, soldList, expList, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt, withdrawList){
+  withdrawList = withdrawList || [];
   const out = computeOutstandingTotals();
   let t = `*Golden Mobile Zone*\n📅 ${title}\n\n`;
   t += `*📥 Phones Bought (${boughtList.length})*\n`;
@@ -878,6 +960,11 @@ function buildTextReport(title, boughtList, soldList, expList, stats, stockList,
   expList.forEach(e=> t += `• ${e.desc} — ${money(e.amount)}\n`);
   t += `Total Kharcha: ${money(stats.totalExp)}\n\n`;
 
+  t += `*🏠 Ghar Ka Kharcha / Nikasi (${withdrawList.length})*\n`;
+  if(withdrawList.length===0) t += `— none —\n`;
+  withdrawList.forEach(w=> t += `• ${w.desc} — ${money(w.amount)}\n`);
+  t += `Total Nikasi: ${money(stats.totalWithdraw)}\n\n`;
+
   t += `*🧾 Udhaar*\n`;
   t += `Naya Udhaar (customers se lena): ${money(stats.dueCreatedSell)}\n`;
   t += `Udhaar Wasool Kiya: ${money(dueSettledSellAmt)}\n`;
@@ -895,15 +982,72 @@ function buildTextReport(title, boughtList, soldList, expList, stats, stockList,
   return t;
 }
 
+function getEarliestDataDate(){
+  let dates = [];
+  phones.forEach(p=>{ if(p.buyDate) dates.push(p.buyDate); if(p.sellDate) dates.push(p.sellDate); });
+  expenses.forEach(e=>{ if(e.date) dates.push(e.date); });
+  withdrawals.forEach(w=>{ if(w.date) dates.push(w.date); });
+  Object.keys(openingBalances).forEach(d=>dates.push(d));
+  if(dates.length===0) return null;
+  return dates.sort()[0];
+}
+
+function prevDateStr(t){
+  const d = new Date(t+'T00:00:00');
+  d.setDate(d.getDate()-1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+function getDateCashFlow(t){
+  const bought = phones.filter(p=>p.buyDate===t);
+  const sold = phones.filter(p=>p.sellDate===t && p.status==='sold');
+  const exp = expenses.filter(e=>e.date===t);
+  const wd = withdrawals.filter(w=>w.date===t);
+  const dueSell = payments.filter(pm=>pm.type==='sell_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
+  const dueBuy = payments.filter(pm=>pm.type==='buy_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
+  const cashIn = sold.reduce((s,p)=>s+p.sellPaid,0) + dueSell;
+  const cashOut = bought.reduce((s,p)=>s+p.buyPaid,0) + dueBuy + exp.reduce((s,e)=>s+e.amount,0) + wd.reduce((s,w)=>s+w.amount,0);
+  return { cashIn, cashOut };
+}
+
+function resolveOpeningBalance(t, memo){
+  memo = memo || {};
+  if(memo[t] !== undefined) return memo[t];
+  if(openingBalances[t] !== undefined){ memo[t] = openingBalances[t]; return memo[t]; }
+  const earliest = getEarliestDataDate();
+  if(!earliest || t <= earliest){ memo[t] = 0; return 0; }
+  const pd = prevDateStr(t);
+  const prevOpening = resolveOpeningBalance(pd, memo);
+  const flow = getDateCashFlow(pd);
+  const closing = prevOpening + flow.cashIn - flow.cashOut;
+  memo[t] = closing;
+  return closing;
+}
+
 function buildReportForDate(t){
   const boughtToday = phones.filter(p=>p.buyDate===t);
   const soldToday = phones.filter(p=>p.sellDate===t && p.status==='sold');
   const expToday = expenses.filter(e=>e.date===t);
+  const withdrawToday = withdrawals.filter(w=>w.date===t);
   const stockList = phones.filter(p=>p.status==='in_stock');
   const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
   const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date===t).reduce((s,pm)=>s+pm.amount,0);
-  const stats = computeStats(boughtToday, soldToday, expToday, dueSettledSellAmt, dueSettledBuyAmt);
-  return { boughtToday, soldToday, expToday, stockList, dueSettledSellAmt, dueSettledBuyAmt, stats };
+  const stats = computeStats(boughtToday, soldToday, expToday, dueSettledSellAmt, dueSettledBuyAmt, withdrawToday);
+  const openingBalance = resolveOpeningBalance(t);
+  const isManualOpening = openingBalances[t] !== undefined;
+  const expectedCash = openingBalance + stats.cashIn - stats.cashOut;
+  return { boughtToday, soldToday, expToday, withdrawToday, stockList, dueSettledSellAmt, dueSettledBuyAmt, stats, openingBalance, isManualOpening, expectedCash };
+}
+
+function saveOpeningBalance(kind){
+  const t = kind==='daily' ? todayStr() : document.getElementById('customDatePicker').value;
+  if(!t){ alert('Pehle date chunein.'); return; }
+  const inputId = kind==='daily' ? 'openingBalanceInput' : 'customOpeningBalanceInput';
+  const amt = parseFloat(document.getElementById(inputId).value);
+  if(isNaN(amt) || amt<0){ alert('Sahi amount likhein.'); return; }
+  openingBalances[t] = amt;
+  saveData();
+  if(kind==='daily') closeShop(); else generateCustomDate();
 }
 
 function closeShop(){
@@ -918,9 +1062,14 @@ function closeShop(){
   document.getElementById('rStock').textContent = r.stockList.length;
   document.getElementById('rCashIn').textContent = r.stats.cashIn.toLocaleString('en-IN');
   document.getElementById('rCashOut').textContent = r.stats.cashOut.toLocaleString('en-IN');
-  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
+  document.getElementById('openingBalanceInput').value = r.openingBalance || '';
+  document.getElementById('openingBalanceHint').textContent = r.isManualOpening
+    ? '✋ Ye amount aapne khud set ki hai.'
+    : '🔄 Ye pichle din ke hisaab se khud aayi hai — agar sahi hai to kuch mat karo.';
+  document.getElementById('rExpectedCash').textContent = money(r.expectedCash);
+  document.getElementById('reportDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt, r.withdrawToday);
+  lastReportText.daily = buildTextReport('Daily Report — '+prettyDate(), r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt, r.withdrawToday) + `\n*🧧 Jeb Ka Hisaab*\nShuru Mein Cash: ${money(r.openingBalance)}\nAb Hona Chahiye: ${money(r.expectedCash)}\n`;
+  lastReportData.daily = { title:'Daily Report - '+prettyDate(), boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, withdrawList:r.withdrawToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Daily-Report-'+t };
 }
 
 function generateCustomDate(){
@@ -937,9 +1086,14 @@ function generateCustomDate(){
   document.getElementById('cStock').textContent = r.stockList.length;
   document.getElementById('cCashIn').textContent = r.stats.cashIn.toLocaleString('en-IN');
   document.getElementById('cCashOut').textContent = r.stats.cashOut.toLocaleString('en-IN');
-  document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt);
-  lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
+  document.getElementById('customOpeningBalanceInput').value = r.openingBalance || '';
+  document.getElementById('customOpeningBalanceHint').textContent = r.isManualOpening
+    ? '✋ Ye amount aapne khud set ki hai.'
+    : '🔄 Ye pichle din ke hisaab se khud aayi hai — agar sahi hai to kuch mat karo.';
+  document.getElementById('cExpectedCash').textContent = money(r.expectedCash);
+  document.getElementById('customDetails').innerHTML = buildDetailsHTML(r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt, r.withdrawToday);
+  lastReportText.custom = buildTextReport('Report — '+prettyD, r.boughtToday, r.soldToday, r.expToday, r.stats, r.stockList, r.dueSettledSellAmt, r.dueSettledBuyAmt, r.withdrawToday) + `\n*🧧 Jeb Ka Hisaab*\nShuru Mein Cash: ${money(r.openingBalance)}\nAb Hona Chahiye: ${money(r.expectedCash)}\n`;
+  lastReportData.custom = { title:'Report - '+prettyD, boughtList:r.boughtToday, soldList:r.soldToday, expList:r.expToday, withdrawList:r.withdrawToday, stats:r.stats, stockRemaining:r.stockList.length, dueSettledSellAmt:r.dueSettledSellAmt, dueSettledBuyAmt:r.dueSettledBuyAmt, filename:'Report-'+t };
 }
 
 function generateMonthly(){
@@ -947,10 +1101,11 @@ function generateMonthly(){
   const boughtM = phones.filter(p=>p.buyDate && p.buyDate.startsWith(m));
   const soldM = phones.filter(p=>p.sellDate && p.sellDate.startsWith(m) && p.status==='sold');
   const expM = expenses.filter(e=>e.date && e.date.startsWith(m));
+  const withdrawM = withdrawals.filter(w=>w.date && w.date.startsWith(m));
   const stockList = phones.filter(p=>p.status==='in_stock');
   const dueSettledSellAmt = payments.filter(pm=>pm.type==='sell_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
   const dueSettledBuyAmt = payments.filter(pm=>pm.type==='buy_due' && pm.date && pm.date.startsWith(m)).reduce((s,pm)=>s+pm.amount,0);
-  const stats = computeStats(boughtM, soldM, expM, dueSettledSellAmt, dueSettledBuyAmt);
+  const stats = computeStats(boughtM, soldM, expM, dueSettledSellAmt, dueSettledBuyAmt, withdrawM);
 
   document.getElementById('monthlyCard').style.display='block';
   document.getElementById('monthlyTitle').textContent = '📅 ' + prettyMonth(m);
@@ -960,9 +1115,9 @@ function generateMonthly(){
   document.getElementById('mStock').textContent = stockList.length;
   document.getElementById('mCashIn').textContent = stats.cashIn.toLocaleString('en-IN');
   document.getElementById('mCashOut').textContent = stats.cashOut.toLocaleString('en-IN');
-  document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
-  lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt);
-  lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, stats, stockRemaining:stockList.length, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
+  document.getElementById('monthlyDetails').innerHTML = buildDetailsHTML(boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt, withdrawM);
+  lastReportText.monthly = buildTextReport('Monthly Report — '+prettyMonth(m), boughtM, soldM, expM, stats, stockList, dueSettledSellAmt, dueSettledBuyAmt, withdrawM);
+  lastReportData.monthly = { title:'Monthly Report - '+prettyMonth(m), boughtList:boughtM, soldList:soldM, expList:expM, withdrawList:withdrawM, stats, stockRemaining:stockList.length, dueSettledSellAmt, dueSettledBuyAmt, filename:'Monthly-Report-'+m };
 }
 
 function shareWhatsapp(kind){
@@ -1078,6 +1233,7 @@ function exportMasterExcel(){
   const totalSaleAll = allSold.reduce((s,p)=>s+p.sellPrice,0);
   const totalProfitAll = allSold.reduce((s,p)=>s+(p.sellPrice-p.buyPrice),0);
   const totalExpAll = expenses.reduce((s,e)=>s+e.amount,0);
+  const totalWithdrawAll = withdrawals.reduce((s,w)=>s+w.amount,0);
   const stockRemaining = phones.filter(p=>p.status==='in_stock').length;
 
   const summaryRows = [
@@ -1089,6 +1245,7 @@ function exportMasterExcel(){
     { 'Metric':'Total Sale (All Time) Rs', 'Value': totalSaleAll },
     { 'Metric':'Total Profit (All Time) Rs', 'Value': totalProfitAll },
     { 'Metric':'Total Expenses (All Time) Rs', 'Value': totalExpAll },
+    { 'Metric':'Total Home/Personal Withdrawals (All Time) Rs', 'Value': totalWithdrawAll },
     { 'Metric':'Outstanding - Customers Owe Us Rs', 'Value': out.totalCustomerDue },
     { 'Metric':'Outstanding - We Owe Sellers Rs', 'Value': out.totalSellerDue }
   ];
@@ -1105,6 +1262,7 @@ function exportMasterExcel(){
   const dateSet = new Set();
   phones.forEach(p=>{ if(p.buyDate) dateSet.add(p.buyDate); if(p.sellDate) dateSet.add(p.sellDate); });
   expenses.forEach(e=>{ if(e.date) dateSet.add(e.date); });
+  withdrawals.forEach(w=>{ if(w.date) dateSet.add(w.date); });
   const dates = Array.from(dateSet).sort().reverse();
 
   dates.forEach(d=>{
@@ -1117,6 +1275,9 @@ function exportMasterExcel(){
     });
     expenses.filter(e=>e.date===d).forEach(e=>{
       rows.push({ 'Type':'Expense', 'Model':e.desc, 'Color':'', 'IMEI':'', 'Amount (Rs)':e.amount, 'Paid (Rs)':'', 'Due (Rs)':'', 'Status':'', 'Party':'', 'Profit (Rs)':'' });
+    });
+    withdrawals.filter(w=>w.date===d).forEach(w=>{
+      rows.push({ 'Type':'Home/Personal Nikasi', 'Model':w.desc, 'Color':'', 'IMEI':'', 'Amount (Rs)':w.amount, 'Paid (Rs)':'', 'Due (Rs)':'', 'Status':'', 'Party':'', 'Profit (Rs)':'' });
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), d);
   });
@@ -1145,6 +1306,7 @@ function exportExcel(kind){
     'Status': statusOf(p.sellDue), 'Buy Price (Rs)': p.buyPrice, 'Profit (Rs)': p.sellPrice - p.buyPrice, 'Customer Name': p.customerName||''
   }));
   const expSheet = data.expList.map(e=>({ 'Description': e.desc, 'Amount (Rs)': e.amount, 'Date': e.date }));
+  const withdrawSheet = (data.withdrawList||[]).map(w=>({ 'Description': w.desc, 'Amount (Rs)': w.amount, 'Date': w.date }));
   const summarySheet = [
     { 'Metric': 'Phones Bought', 'Value': data.boughtList.length },
     { 'Metric': 'Phones Sold', 'Value': data.soldList.length },
@@ -1152,6 +1314,7 @@ function exportExcel(kind){
     { 'Metric': 'Total Sale (Rs)', 'Value': data.stats.totalSale },
     { 'Metric': 'Total Profit (Rs)', 'Value': data.stats.totalProfit },
     { 'Metric': 'Total Expenses (Rs)', 'Value': data.stats.totalExp },
+    { 'Metric': 'Total Home/Personal Withdrawals (Rs)', 'Value': data.stats.totalWithdraw },
     { 'Metric': 'New Udhaar - Customers Owe (Rs)', 'Value': data.stats.dueCreatedSell },
     { 'Metric': 'Udhaar Collected (Rs)', 'Value': data.dueSettledSellAmt },
     { 'Metric': 'New Udhaar - We Owe Sellers (Rs)', 'Value': data.stats.dueCreatedBuy },
@@ -1167,6 +1330,7 @@ function exportExcel(kind){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buySheet.length?buySheet:[{'Model':'-- No purchases --'}]), 'Buy');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sellSheet.length?sellSheet:[{'Model':'-- No sales --'}]), 'Sell');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expSheet.length?expSheet:[{'Description':'-- No expenses --'}]), 'Expenses');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(withdrawSheet.length?withdrawSheet:[{'Description':'-- No withdrawals --'}]), 'Withdrawals');
   XLSX.writeFile(wb, data.filename + '.xlsx');
 }
 
@@ -1189,6 +1353,8 @@ function handleRestoreFile(event){
     phones = data.phones;
     expenses = data.expenses;
     payments = data.payments;
+    withdrawals = data.withdrawals || [];
+    openingBalances = data.openingBalances || {};
     saveData();
     refreshAllViews();
     alert('✅ Data wapis load ho gaya.');
@@ -1198,7 +1364,7 @@ function handleRestoreFile(event){
 }
 
 function exportBackup(){
-  const data = { phones, expenses, payments, exportedAt: new Date().toISOString() };
+  const data = { phones, expenses, payments, withdrawals, openingBalances, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
